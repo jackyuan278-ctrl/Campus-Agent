@@ -33,6 +33,7 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "MYSQL_DB_ACTIVITY",
     "MYSQL_DB_COMMUNITY",
     "MYSQL_DB_SECONDHAND",
+    "MYSQL_DB_AGENT",
     "GLM_API_KEY",
     "GLM_BASE_URL",
     "GLM_CHAT_MODEL",
@@ -67,6 +68,8 @@ class Settings:
         self.mysql_db_activity: str = _env("MYSQL_DB_ACTIVITY")
         self.mysql_db_community: str = _env("MYSQL_DB_COMMUNITY")
         self.mysql_db_secondhand: str = _env("MYSQL_DB_SECONDHAND")
+        # Agent 自己的库：聊天记录 / 上下文
+        self.mysql_db_agent: str = _env("MYSQL_DB_AGENT")
 
         # ===== 对话模型（GLM，OpenAI 兼容协议） =====
         self.llm_api_key: str = _env("GLM_API_KEY")
@@ -85,8 +88,7 @@ class Settings:
         # ===== 联网搜索（Tavily） =====
         self.tavily_api_key: str = _env("TAVILY_API_KEY")
 
-        # ===== 会话记忆 =====
-        self.redis_url: str = _env("REDIS_URL", "redis://localhost:6379/0")
+        # ===== 会话记忆（已改用 MySQL tb_chat_message，不再依赖 Redis） =====
 
         # ===== 服务自身参数（不涉及外部资源，给默认值） =====
         self.app_host: str = _env("APP_HOST", "127.0.0.1")

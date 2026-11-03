@@ -48,6 +48,11 @@ def get_secondhand_engine() -> AsyncEngine:
     return get_engine(get_settings().mysql_db_secondhand)
 
 
+def get_agent_engine() -> AsyncEngine:
+    """Agent 自己的库（聊天记录 / 上下文）。"""
+    return get_engine(get_settings().mysql_db_agent)
+
+
 async def dispose_all() -> None:
     """关闭并清理所有连接池（应用退出时调用，异步）。"""
     for db_name, engine in _engines.items():

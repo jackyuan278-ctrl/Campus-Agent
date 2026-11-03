@@ -5,8 +5,9 @@
 分组建议：
     - 意图常量：INTENT_XXX
     - 分页/限流：MAX_PAGE_SIZE 等
-    - 会话：TTL 等
+    - 会话：上下文条数等
 """
-REDIS_KEY_PREFIX = "history"
-REDIS_HISTORY_TTL = 24 * 60 * 60 * 3
-REDIS_MAX_HISTORY = 100
+
+# 每次拼进上下文的最大消息条数。
+# 注意：这只影响「发给模型多少」，不影响存储——库里始终是全量。
+CHAT_HISTORY_LIMIT = 20

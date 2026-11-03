@@ -9,7 +9,6 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "pymysql>=1.2.3",
     "sqlalchemy[asyncio]>=2.1.6",
-    "redis>=8.1.0",
     # Agent 编排（框架只装依赖，编排逻辑自己写）
     "langgraph>=0.2",
     "aiomysql>=0.3.2",
