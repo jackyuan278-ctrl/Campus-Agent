@@ -1,0 +1,31 @@
+# Docker 构建上下文排除清单
+# 目的：别把虚拟环境、密钥、IDE 缓存送进构建上下文（既慢又有外泄风险）
+
+# 虚拟环境（96MB+，镜像里由 uv 重新安装）
+.venv/
+venv/
+env/
+
+# 密钥，绝对不能进镜像/上下文
+.env
+.env.*
+!.env.example
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# IDE / VCS
+.idea/
+.vscode/
+.git/
+.gitignore
+*.swp
+
+# 日志与本地数据
+*.log
+data/
