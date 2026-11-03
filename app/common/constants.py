@@ -7,3 +7,6 @@
     - 分页/限流：MAX_PAGE_SIZE 等
     - 会话：TTL 等
 """
+REDIS_KEY_PREFIX = "history"
+REDIS_HISTORY_TTL = 24 * 60 * 60 * 3
+REDIS_MAX_HISTORY = 100
