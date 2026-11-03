@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        dispose_all()
+        await dispose_all()
         logger.info("服务已关闭")
 
 

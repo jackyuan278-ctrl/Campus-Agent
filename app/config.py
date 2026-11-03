@@ -147,10 +147,11 @@ class Settings:
     def mysql_url(self) -> str:
         """SQLAlchemy 连接串（不含库名，多库切换用）。
 
+        driver 用 aiomysql（异步），与 FastAPI / Redis 的异步链路保持一致。
         账号密码做 URL 编码，防止密码里的 @ : / 等字符破坏连接串。
         """
         return (
-            f"mysql+pymysql://{quote_plus(self.mysql_user)}:{quote_plus(self.mysql_password)}"
+            f"mysql+aiomysql://{quote_plus(self.mysql_user)}:{quote_plus(self.mysql_password)}"
             f"@{self.mysql_host}:{self.mysql_port}"
         )
 
