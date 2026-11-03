@@ -12,6 +12,7 @@ from app.common.exceptions import AppError, ConfigError
 from app.common.logger import setup_logging
 from app.config import get_settings
 from app.database import dispose_all
+from app.llm.gateway import llm_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await llm_gateway.aclose()
         await dispose_all()
         logger.info("服务已关闭")
 

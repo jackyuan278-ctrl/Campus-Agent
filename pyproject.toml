@@ -13,6 +13,7 @@ dependencies = [
     # Agent 编排（框架只装依赖，编排逻辑自己写）
     "langgraph>=0.2",
     "aiomysql>=0.3.2",
+    "openai>=3.42.1",
 ]
 
 [dependency-groups]
