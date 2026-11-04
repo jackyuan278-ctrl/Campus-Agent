@@ -7,12 +7,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import chat
+from app.agent.runtime import AgentRuntime
+from app.api.v1 import chat, upload
 from app.common.exceptions import AppError, ConfigError
 from app.common.logger import setup_logging
 from app.config import get_settings
 from app.database import dispose_all
 from app.llm.gateway import llm_gateway
+from app.llm.vision import aclose as close_vision
+from app.rag import embedding as rag_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +43,22 @@ async def lifespan(app: FastAPI):
         settings.mysql_host,
         settings.llm_model,
     )
+
+    # LangGraph 状态图 + MySQL checkpointer（带连接自愈，见 app/agent/runtime.py）
+    runtime = AgentRuntime(settings.db_url(settings.mysql_db_agent))
+    await runtime.start()
+    app.state.agent_runtime = runtime
+    logger.info("状态图已就绪（checkpointer=MySQL/%s）", settings.mysql_db_agent)
+
     try:
         yield
     finally:
+        await runtime.aclose()
         await llm_gateway.aclose()
+        await close_vision()
+        await rag_embedding.aclose()
         await dispose_all()
         logger.info("服务已关闭")
-
 
 app = FastAPI(
     title="CampusHub Agent API",
@@ -79,6 +91,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 # 3. 挂载路由
 app.include_router(chat.router, prefix="/assistant", tags=["助手"])
+app.include_router(upload.router, prefix="/assistant", tags=["助手"])
 
 
 @app.get("/health", tags=["系统"])

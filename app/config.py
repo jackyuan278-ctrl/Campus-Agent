@@ -88,6 +88,23 @@ class Settings:
         # ===== 联网搜索（Tavily） =====
         self.tavily_api_key: str = _env("TAVILY_API_KEY")
 
+        # ===== 视觉模型（GLM-4.6V：OCR / 看图，复用同一个 GLM key） =====
+        self.vision_model: str = _env("GLM_VISION_MODEL", "glm-4.6v")
+
+        # ===== 文件上传（阿里云 OSS） =====
+        self.oss_access_key_id: str = _env("OSS_ACCESS_KEY_ID")
+        self.oss_access_key_secret: str = _env("OSS_ACCESS_KEY_SECRET")
+        self.oss_bucket: str = _env("OSS_BUCKET")
+        self.oss_endpoint: str = _env("OSS_ENDPOINT", "oss-cn-beijing.aliyuncs.com")
+        self.oss_region: str = _env("OSS_REGION", "cn-beijing")
+
+        # ===== 用量配额 =====
+        # 和 campus-hub 共用同一个 HS256 密钥，才能验出 userId
+        self.jwt_secret: str = _env("JWT_SECRET", "")
+        self.daily_token_quota: int = _env_int("DAILY_TOKEN_QUOTA", 100_000)
+        # 每人每天最多上传几次（一次可以是一个文件）
+        self.daily_upload_limit: int = _env_int("DAILY_UPLOAD_LIMIT", 5)
+
         # ===== 会话记忆（已改用 MySQL tb_chat_message，不再依赖 Redis） =====
 
         # ===== 服务自身参数（不涉及外部资源，给默认值） =====
@@ -126,6 +143,16 @@ class Settings:
     @property
     def embedding_configured(self) -> bool:
         return bool(self.embedding_api_key and self.embedding_model and self.embedding_base_url)
+
+    @property
+    def oss_configured(self) -> bool:
+        """OSS 四要素齐全才算能上传（bucket/endpoint 有默认值，主要看密钥）。"""
+        return bool(
+            self.oss_access_key_id
+            and self.oss_access_key_secret
+            and self.oss_bucket
+            and self.oss_endpoint
+        )
 
     @property
     def milvus_configured(self) -> bool:

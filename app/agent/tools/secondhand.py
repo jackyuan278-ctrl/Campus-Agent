@@ -13,6 +13,7 @@
 """
 from typing import Any
 
+from langchain_core.tools import tool
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -126,3 +127,33 @@ async def get_secondhand_detail(item_id: int) -> dict[str, Any] | None:
         row = result.mappings().first()
 
     return None if row is None else _to_dict(row)
+
+
+# ===== LangChain 工具封装 =====
+# 核心函数保持纯 Python（便于单测和复用），这里只包一层给图/模型使用。
+# docstring 会被当成工具的 description 送给模型，所以要写清楚用途。
+
+
+@tool
+async def search_secondhand_items_tool(
+    keyword: str | None = None,
+    max_price: float | None = None,
+    category_id: int | None = None,
+    page_size: int = 5,
+) -> list[dict[str, Any]]:
+    """搜索校园在售二手商品。按关键词模糊匹配名称，可按价格上限和分类过滤。"""
+    return await search_secondhand_items(
+        keyword=keyword,
+        max_price=max_price,
+        category_id=category_id,
+        page_size=page_size,
+    )
+
+
+@tool
+async def get_secondhand_detail_tool(item_id: int) -> dict[str, Any] | None:
+    """按商品 ID 查询二手商品详情（含描述、交易地点、卖家）。"""
+    return await get_secondhand_detail(item_id)
+
+
+SECONDHAND_TOOLS = [search_secondhand_items_tool, get_secondhand_detail_tool]

@@ -35,3 +35,27 @@ class ConfigError(AppError):
     code = 1001
     status_code = 500
     message = "配置错误"
+
+
+class QuotaExceededError(AppError):
+    """当日 token 配额用尽。HTTP 429，前端按「额度用完」提示，不要重试。"""
+
+    code = 3001
+    status_code = 429
+    message = "今日额度已用完，请明天再来"
+
+
+class UnauthorizedError(AppError):
+    """未登录 / token 无效。对齐 campus-hub 网关的 401 语义。"""
+
+    code = 401
+    status_code = 401
+    message = "未登录"
+
+
+class ForbiddenError(AppError):
+    """已登录，但这个资源不属于他（会话 ID 被猜中时的情况）。"""
+
+    code = 403
+    status_code = 403
+    message = "无权访问该会话"

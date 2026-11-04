@@ -7,12 +7,20 @@ dependencies = [
     "fastapi>=0.162.0",
     "uvicorn[standard]>=0.54.0",
     "python-dotenv>=1.2.4",
-    "pymysql>=1.2.3",
+    "pymysql>=1.1,<1.2",
     "sqlalchemy[asyncio]>=2.1.6",
     # Agent 编排（框架只装依赖，编排逻辑自己写）
     "langgraph>=0.2",
     "aiomysql>=0.3.2",
     "openai>=3.42.1",
+    "langgraph-checkpoint-mysql[aiomysql]>=3.0.0",
+    "langchain-openai>=1.7.3",
+    "numpy>=2.5.4",
+    "langchain>=1.4.8",
+    "tavily-python>=0.8.5",
+    "pyjwt>=2.15.1",
+    "alibabacloud-oss-v2>=1.4.1",
+    "python-multipart>=0.0.33",
 ]
 
 [dependency-groups]

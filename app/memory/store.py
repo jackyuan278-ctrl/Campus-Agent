@@ -68,6 +68,29 @@ class MemoryStore:
             for row in reversed(rows)
         ]
 
+    async def list_all(self, thread_id: str) -> list[dict[str, Any]]:
+        """取该会话的全部消息（前端展示 / 导出用），按时间正序。
+
+        和 get_history 的区别：这是给人看的全量，不受上下文条数限制。
+        """
+        sql = text(
+            "SELECT id, role, content, created_at FROM tb_chat_message "
+            "WHERE thread_id = :thread_id ORDER BY id ASC"
+        )
+        async with self._engine.connect() as conn:
+            result = await conn.execute(sql, {"thread_id": thread_id})
+            rows = result.mappings().all()
+
+        return [
+            {
+                "id": row["id"],
+                "role": row["role"],
+                "content": row["content"],
+                "created_at": str(row["created_at"]),
+            }
+            for row in rows
+        ]
+
     async def clear(self, thread_id: str) -> None:
         """清空指定会话的记录。
 

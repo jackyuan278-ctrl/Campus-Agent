@@ -8,6 +8,7 @@
 import logging
 from typing import Any
 
+from langchain_openai import ChatOpenAI
 from openai import APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 
 from app.common.exceptions import AppError
@@ -102,6 +103,33 @@ class LLMGateway:
             await self._client.close()
             self._client = None
             logger.info("已关闭 LLM 客户端")
+
+
+def get_chat_model(*, temperature: float = 0.3, max_tokens: int = 1500) -> ChatOpenAI:
+    """构造 LangChain 的 ChatOpenAI（指向 GLM 的 OpenAI 兼容接口）。
+
+    和 LLMGateway.chat() 共用同一份 .env 配置，区别只是形态：
+    - LLMGateway.chat()：一次性返回完整字符串，适合简单调用
+    - get_chat_model()：返回 Runnable，支持 astream / 事件回调 / bind_tools，
+      给 LangGraph 节点和 SSE 流式输出用
+    """
+    settings = get_settings()
+    return ChatOpenAI(
+        model=settings.llm_model,
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        temperature=temperature,
+        max_tokens=max_tokens,   # 推理模型要留足预算，否则内容被思考吃光
+        timeout=30,
+        max_retries=2,
+        # 让流式响应也带 usage（OpenAI 协议默认只在非流式返回）。
+        # 不开启的话，SSE 路径拿不到真实 token 数，配额只能靠估算。
+        stream_usage=True,
+        # glm-5.3-flash 是「始终思考」的模型，关不掉，但能调档位。
+        # 我们是简单问答，用 low 换更快的首字和更低的 token 消耗。
+        # 注意参数形状：thinking 必须是对象，type 只认 enabled/disabled，档位放 level。
+        extra_body={"thinking": {"type": "enabled", "level": "low"}},
+    )
 
 
 # 全局单例
