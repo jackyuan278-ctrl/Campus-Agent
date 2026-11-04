@@ -21,6 +21,7 @@ dependencies = [
     "pyjwt>=2.15.1",
     "alibabacloud-oss-v2>=1.4.1",
     "python-multipart>=0.0.33",
+    "aio-pika>=10.2.2",
 ]
 
 [dependency-groups]

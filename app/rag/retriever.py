@@ -1,32 +1,46 @@
 """RAG 检索：查询 → 向量化 → 余弦 top-k。
 
-索引在首次使用时懒加载并常驻内存；重建索引后调 reload_index() 生效。
+索引在首次使用时懒加载并常驻内存。因为增量索引可能是**另一个进程**在改文件
+（`python -m app.rag.ingest`、MQ 消费者），所以每次取索引都 stat 一下文件
+mtime：变了就重新读盘。stat 是微秒级开销，比「改完必须重启服务」划算。
 """
 import logging
 
 from app.rag.embedding import embed_query
-from app.rag.index import VectorIndex
+from app.rag.index import INDEX_DIR, VECTORS_FILE, VectorIndex
 
 logger = logging.getLogger(__name__)
 
 _index: VectorIndex | None = None
 _loaded = False
+_loaded_mtime: float = 0.0
+
+
+def _index_mtime() -> float:
+    """索引文件的修改时间；文件不存在时返回 0。"""
+    try:
+        return (INDEX_DIR / VECTORS_FILE).stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def get_index() -> VectorIndex | None:
-    """懒加载索引（进程内只读一次盘）。"""
-    global _index, _loaded
-    if not _loaded:
+    """取索引；文件被别人改过就自动重新加载。"""
+    global _index, _loaded, _loaded_mtime
+    mtime = _index_mtime()
+    if not _loaded or mtime != _loaded_mtime:
         _index = VectorIndex.load()
         _loaded = True
+        _loaded_mtime = mtime
     return _index
 
 
 def reload_index() -> None:
-    """丢弃缓存，下次检索重新读盘（重新 ingest 之后调用）。"""
-    global _index, _loaded
+    """丢弃缓存，下次检索重新读盘（同进程重建索引后调用）。"""
+    global _index, _loaded, _loaded_mtime
     _index = None
     _loaded = False
+    _loaded_mtime = 0.0
     logger.info("索引缓存已失效，下次检索重新加载")
 
 

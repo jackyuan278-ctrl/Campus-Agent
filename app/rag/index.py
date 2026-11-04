@@ -63,6 +63,49 @@ class VectorIndex:
         top_idx = np.argsort(scores)[::-1][:top_k]
         return [(self.docs[i], float(scores[i])) for i in top_idx]
 
+    # ---------- 单条增删（增量索引用） ----------
+    # 都是「返回新索引」而不是原地改：检索线程可能正持有旧引用，
+    # 原地改 numpy 矩阵会让它读到一半新一半旧。
+
+    def without(self, source: str, doc_id: int) -> "VectorIndex":
+        """去掉指定的 (source, id) 那一行。不存在时原样返回。"""
+        keep = [
+            i
+            for i, doc in enumerate(self.docs)
+            if not (doc.get("source") == source and doc.get("id") == doc_id)
+        ]
+        if len(keep) == len(self.docs):
+            return self
+        if not keep:
+            return VectorIndex(vectors=np.zeros((0, 0), dtype=np.float32), docs=[])
+        return VectorIndex(vectors=self.vectors[keep], docs=[self.docs[i] for i in keep])
+
+    def append(self, doc: dict[str, Any], vector: list[float]) -> "VectorIndex":
+        """追加一条文档 + 向量（向量在这里统一做 L2 归一化）。"""
+        row = self._l2_normalize(np.asarray([vector], dtype=np.float32))
+        if self.vectors.size == 0:
+            return VectorIndex(vectors=row, docs=[doc])
+        return VectorIndex(vectors=np.vstack([self.vectors, row]), docs=[*self.docs, doc])
+
+    def without_fingerprint(self, fp: str) -> "VectorIndex":
+        """去掉内容指纹相同的所有行（保持和全量 ingest 的去重口径一致）。
+
+        不做这一步的话，增量插入一条和库里已有内容相同的文档，索引里就会出现
+        两份一模一样的向量——正是全量去重要消灭的东西。
+        """
+        from app.rag.ingest import fingerprint  # 局部导入，避免 ingest ← index 循环依赖
+
+        keep = [
+            i
+            for i, doc in enumerate(self.docs)
+            if (doc.get("fingerprint") or fingerprint(doc.get("text", ""))) != fp
+        ]
+        if len(keep) == len(self.docs):
+            return self
+        if not keep:
+            return VectorIndex(vectors=np.zeros((0, 0), dtype=np.float32), docs=[])
+        return VectorIndex(vectors=self.vectors[keep], docs=[self.docs[i] for i in keep])
+
     # ---------- 落盘 / 加载 ----------
 
     def save(self, directory: Path | None = None) -> Path:

@@ -105,6 +105,12 @@ class Settings:
         # 每人每天最多上传几次（一次可以是一个文件）
         self.daily_upload_limit: int = _env_int("DAILY_UPLOAD_LIMIT", 5)
 
+        # ===== 消息队列（RabbitMQ，用于增量索引） =====
+        # campus-hub 的增删改发消息到这里，消费者收到后重算单条向量。
+        # 不配也能跑（消费者不启动），只是索引只能靠手动跑 ingest 更新。
+        self.rabbitmq_url: str = _env("RABBITMQ_URL")
+        self.rabbitmq_index_queue: str = _env("RABBITMQ_INDEX_QUEUE", "campus.index.rebuild")
+
         # ===== 会话记忆（已改用 MySQL tb_chat_message，不再依赖 Redis） =====
 
         # ===== 服务自身参数（不涉及外部资源，给默认值） =====
@@ -157,6 +163,11 @@ class Settings:
     @property
     def milvus_configured(self) -> bool:
         return bool(self.milvus_uri)
+
+    @property
+    def rabbitmq_configured(self) -> bool:
+        """配了连接串才启动索引消费者。"""
+        return bool(self.rabbitmq_url)
 
     # ---------- CORS ----------
 
