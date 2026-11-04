@@ -37,6 +37,11 @@ def small_threshold_graph(monkeypatch):
             calls.append("summary" if is_summary else "chat")
             return AIMessage(content=SUMMARY_TEXT if is_summary else "（回答）有 3 本教材在售。")
 
+        def bind_tools(self, tools, **kwargs):
+            # 工具集改为静态装配后，非 casual 档位每轮都会 bind_tools（不再可能是空集），
+            # GenericFakeChatModel 默认抛 NotImplementedError，这里返回自身即可。
+            return self
+
     monkeypatch.setattr(
         graph_module, "get_chat_model", lambda **kw: Fake(messages=iter([AIMessage(content="x")]))
     )

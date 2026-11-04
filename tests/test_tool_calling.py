@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 import app.agent.graph as graph_module
+import app.agent.tools.secondhand as secondhand_module
 import app.agent.tools.web as web_module
 
 WEB_HITS = [
@@ -17,6 +18,18 @@ WEB_HITS = [
         "score": 0.91,
         "source": "web",
     }
+]
+
+# 二手工具在测试里不能真连 MySQL，统一换成这份假数据
+SECONDHAND_HITS = [
+    {"id": 1, "name": "捷安特自行车", "price": 180.0, "condition_desc": "7成新"},
+    {"id": 2, "name": "美利达自行车", "price": 260.0, "condition_desc": "9成新"},
+]
+
+LOCAL_TOOL_NAMES = [
+    "search_secondhand_items_tool",
+    "get_secondhand_detail_tool",
+    "search_campus_activities",
 ]
 
 SCRIPT: list[AIMessage] = []
@@ -54,9 +67,13 @@ def graph(monkeypatch):
     async def fake_search(query, max_results=5):
         return WEB_HITS
 
+    async def fake_secondhand(**kwargs):
+        return SECONDHAND_HITS
+
     monkeypatch.setattr(graph_module, "get_chat_model", lambda **kw: ScriptedModel(messages=iter([AIMessage(content="x")])))
     monkeypatch.setattr(graph_module, "MemoryStore", _DummyStore)
     monkeypatch.setattr(web_module, "search_web", fake_search)
+    monkeypatch.setattr(secondhand_module, "search_secondhand_items", fake_secondhand)
     return graph_module.build_graph(MemorySaver())
 
 
@@ -109,14 +126,62 @@ def test_model_answers_without_tool(graph):
     assert not any(isinstance(m, ToolMessage) for m in result["messages"])
 
 
-def test_tools_are_scoped_by_intent():
-    """不同意图绑不同工具集，避免模型跨域乱调。"""
-    assert [t.name for t in graph_module.tools_for_intent("secondhand")] == [
-        "search_secondhand_items_tool",
-        "get_secondhand_detail_tool",
-    ]
-    assert [t.name for t in graph_module.tools_for_intent("activity")] == [
-        "search_campus_activities"
-    ]
-    assert [t.name for t in graph_module.tools_for_intent("casual")] == ["web_search_tool"]
-    assert graph_module.tools_for_intent("other") == []
+def test_tools_are_static_per_mode():
+    """工具集只跟档位有关，跟「这句话被认成什么意图」无关。
+
+    旧版按意图裁剪（tools_for_intent），判成 other 就返回空集，
+    模型连工具名都看不到。现在四个查校园库的档位拿到同一份清单。
+    """
+    for mode in ("chat", "market", "activity", "doc"):
+        assert [t.name for t in graph_module.tools_for_mode(mode)] == LOCAL_TOOL_NAMES, mode
+
+    # 联网是付费能力，只给显式选了「随便聊聊」的档位
+    assert [t.name for t in graph_module.tools_for_mode("casual")] == ["web_search_tool"]
+
+    # 未知 / 缺失档位退回本地工具，绝不能是空集（空集 = 模型没有任何工具可用）
+    assert [t.name for t in graph_module.tools_for_mode(None)] == LOCAL_TOOL_NAMES
+
+
+def test_follow_up_keeps_tools(graph):
+    """追问必须还能查库：档位没变，工具集就不该变。
+
+    回归用例：用户先问「有二手自行车吗」，再追问「最便宜的是哪个」。
+    后者不含任何关键词，旧版被判成 other → 空工具集 → 模型只能拿上一轮
+    那 5 条旧结果复述，答出来的是「那 5 条里最便宜的」而不是全库最便宜的。
+    """
+    SCRIPT.extend([
+        # 第 1 轮：模型要工具 → 拿结果 → 作答
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "search_secondhand_items_tool",
+                    "args": {"keyword": "自行车"},
+                    "id": "call_1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        AIMessage(content="找到两台自行车。"),
+        # 第 2 轮追问：模型再要一次工具（这次多带了价格上限）
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "search_secondhand_items_tool",
+                    "args": {"keyword": "自行车", "max_price": 200},
+                    "id": "call_2",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        AIMessage(content="最便宜的是 180 元那台。"),
+    ])
+
+    _run(graph, "有二手自行车吗", "market", "t-followup")
+    _run(graph, "最便宜的是哪个", "market", "t-followup")
+
+    # 每轮都是「要工具 → 出答案」两次模型调用，所以 4 次 bind_tools
+    assert len(BOUND) == 4, f"每轮都该绑工具，实际绑了 {len(BOUND)} 次"
+    for index, bound in enumerate(BOUND):
+        assert "search_secondhand_items_tool" in bound, f"第 {index} 次调用工具清单里没有二手工具"

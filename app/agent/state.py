@@ -53,8 +53,13 @@ class AgentState(TypedDict, total=False):
 def infer_intent(query: str) -> str:
     """意图识别（规则版：零延迟、零成本、可解释）。
 
-    为什么不用 LLM：意图只有 3 类、关键词可枚举，一次模型调用的
-    延迟（0.3~0.8s）和费用都不划算。覆盖不住时再升级。
+    ⚠️ 这里算出来的 intent **只用于日志和接口返回，不参与任何能力决策**。
+    给哪些工具、用哪份 system prompt，都由前端传的 mode 决定（见 graph.py 的
+    tools_for_mode / prompt_for_mode）。曾经用 intent 裁剪工具集，结果
+    「最便宜的是哪个」被判成 other → 工具集为空 → 模型只能拿历史复述。
+
+    为什么不用 LLM 做这一步：只是观测用途，一次模型调用的
+    延迟（0.3~0.8s）和费用更不划算。
     """
     for intent, keywords in _INTENT_KEYWORDS:
         if any(word in query for word in keywords):
