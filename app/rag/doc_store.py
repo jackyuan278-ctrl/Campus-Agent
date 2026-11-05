@@ -15,6 +15,7 @@ MilvusClient 是同步 API，全部包在 asyncio.to_thread 里——一次插�
 """
 import asyncio
 import logging
+from pathlib import Path
 
 from pymilvus import MilvusClient
 
@@ -34,6 +35,9 @@ def _get_client() -> MilvusClient:
     global _client
     if _client is None:
         path = get_settings().milvus_lite_path
+        # Milvus Lite 不会自动建目录，父目录不存在时直接报
+        # "Open local milvus failed, dir ... not exists"——而且要到第一次传文档才暴露。
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         _client = MilvusClient(path)
         logger.info("Milvus Lite 已打开：%s", path)
     return _client

@@ -1,6 +1,7 @@
 """应用入口：FastAPI 实例 + 生命周期 + 全局异常处理 + 路由挂载。"""
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -45,6 +46,13 @@ async def lifespan(app: FastAPI):
         settings.mysql_host,
         settings.llm_model,
     )
+
+    # 附件向量库要落本地文件，而 Milvus Lite 不会自动建目录——父目录不存在时
+    # 它会在「第一次有人传文档」那一刻才报错，排查成本很高。启动时先建好，
+    # 顺便验证这个路径可写（只读挂载/权限不对会在这里立刻暴露）。
+    rag_dir = Path(settings.milvus_lite_path).parent
+    rag_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("附件向量库目录：%s", rag_dir)
 
     # LangGraph 状态图 + MySQL checkpointer（带连接自愈，见 app/agent/runtime.py）
     runtime = AgentRuntime(settings.db_url(settings.mysql_db_agent))

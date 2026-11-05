@@ -82,7 +82,11 @@ CampusHub 校园平台的智能助手服务。FastAPI + LangGraph 编排，用�
 uv sync                    # 依赖全部走 uv
 ```
 
-然后在项目根目录创建 `.env`（`.gitignore` 已排除，含密钥不要提交）。
+然后在项目根目录创建 `.env`：**直接复制模板再改**，比对着文档手敲不容易漏。
+
+```bash
+cp .env.example .env
+```
 
 必填配置（缺任意一个，服务直接起不来）：
 
@@ -110,6 +114,8 @@ GLM_VISION_MODEL=glm-4.6v           # 不配则识图功能不可用
 OSS_ACCESS_KEY_ID=...               # 不配则上传接口 500
 OSS_ACCESS_KEY_SECRET=...
 OSS_BUCKET=...
+MINERU_API_KEY=...                  # 不配则文档只上传不解析
+MILVUS_LITE_PATH=/app/data/rag/milvus.db   # 附件向量库落盘位置
 JWT_SECRET=...                      # 必须和 campus-hub 一致，否则验不出 userId
 RABBITMQ_URL=amqp://user:pass@host:5672/
 RABBITMQ_INDEX_QUEUE=campus.index.rebuild
@@ -127,19 +133,38 @@ uv run python -m app.rag.ingest --limit 0     # 全量，复用旧向量
 
 不跑的话检索直接返回空，模型会说「没找到」——不是 bug，是没数据。
 
+附件向量库（Milvus Lite）**不用建**：第一次上传文档时自动创建，文件落在
+`MILVUS_LITE_PATH`（默认 `data/rag/milvus.db`）。但它的父目录必须存在——
+服务启动时会自动 `mkdir`，所以别把这个路径指到只读挂载上。
+
 ### 3. 启动
+
+本地：
 
 ```bash
 uv run python -m app.main          # 或 uv run uvicorn app.main:app --port 8000
 uv run python -m app.rag.consumer  # 可选：增量索引消费者，独立进程
 ```
 
+Docker：
+
+```bash
+cp .env.example .env && vim .env           # 填配置
+docker compose build
+docker compose run --rm agent python -m app.rag.ingest --limit 0   # 建索引（写进挂载卷）
+docker compose up -d
+docker compose logs -f agent
+```
+
+`./data` 是挂载卷，同时放 numpy 索引和 `milvus.db`。**不挂卷的话容器一重建，
+附件索引就全丢了。**
+
 健康检查：`GET /health` → `{"status": "ok"}`（只证明进程活着，不查任何外部依赖）
 
 ### 4. 测试
 
 ```bash
-uv run pytest -q                   # 29 passed
+uv run pytest -q                   # 41 passed
 uvx ruff check app tests           # 干净
 ```
 
@@ -149,7 +174,7 @@ uvx ruff check app tests           # 干净
 
 ## 关键设计
 
-以下四条是这个项目里真正想过的地方，每条都附「为什么不能反过来做」。
+以下五条是这个项目里真正想过的地方，每条都附「为什么不能反过来做」。
 
 ### 1. 工具集静态装配，绝不按对话内容裁剪
 
