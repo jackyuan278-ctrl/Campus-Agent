@@ -142,6 +142,30 @@ def test_tools_are_static_per_mode():
     assert [t.name for t in graph_module.tools_for_mode(None)] == LOCAL_TOOL_NAMES
 
 
+def test_tool_rounds_exhausted_drops_tool_calls(graph):
+    """跑满轮数后模型还要工具：必须把 tool_calls 丢掉。
+
+    留着的话，下一轮把历史发给上游（OpenAI 兼容协议）会因
+    「assistant 带 tool_calls 却没有配对 ToolMessage」判 400，会话永久卡死。
+    """
+    def call(idx: int) -> dict:
+        return {
+            "name": "search_secondhand_items_tool",
+            "args": {"keyword": "自行车"},
+            "id": f"c{idx}",
+            "type": "tool_call",
+        }
+
+    # 前 MAX_TOOL_ROUNDS 次会真的执行工具，最后一次（轮数已满）要工具但不会执行
+    SCRIPT.extend([AIMessage(content="", tool_calls=[call(i)]) for i in range(1, 5)])
+
+    result = _run(graph, "有二手自行车吗", "market", "t-rounds")
+
+    last = result["messages"][-1]
+    assert not (getattr(last, "tool_calls", None) or []), "最后一条消息不该残留未执行的 tool_calls"
+    assert result["answer"], "丢掉 tool_calls 后要有兜底正文，不能是空字符串"
+
+
 def test_follow_up_keeps_tools(graph):
     """追问必须还能查库：档位没变，工具集就不该变。
 

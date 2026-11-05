@@ -1,7 +1,7 @@
 """Agent 编排（LangGraph 状态图）——function calling 版。
 
-    START → summarize → image_agent → route → agent ─┬─(模型要工具)→ tools ─┐
-                                                      └─(不要工具)──────────┴→ persist → END
+    START → summarize → image_agent → route → agent ─┬─(要工具)→ tools → agent
+                                                      └─(不要 / 轮数用尽)→ strip_calls → persist → END
 
 各节点职责：
     summarize   上下文压缩（SummarizationMiddleware）：早期对话 → 一段摘要
@@ -10,6 +10,7 @@
                 （含图片文字）写进 messages
     agent       调模型。模型可以直接回答，也可以返回 tool_calls 要求调工具
     tools       ToolNode：执行模型点名的工具，把结果作为 ToolMessage 追加回 messages
+    strip_calls 收尾前丢弃未执行的 tool_calls（轮数用尽时模型仍可能执意要工具）
     persist     写 tb_chat_message（业务记录） + 累加当日 token 用量
 
 档位（mode）决定两件事，都发生在装配阶段，**与这句话说了什么无关**：
@@ -32,7 +33,12 @@ import logging
 from typing import Any
 
 from langchain.agents.middleware import SummarizationMiddleware
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    RemoveMessage,
+    SystemMessage,
+)
 from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
@@ -372,6 +378,30 @@ def build_graph(checkpointer=None):
             "turn_tokens": state.get("turn_tokens", 0) + _tokens_of(resp, messages),
         }
 
+    async def strip_calls(state: AgentState) -> dict[str, Any]:
+        """收尾前清理未执行的 tool_calls。
+
+        模型跑满 MAX_TOOL_ROUNDS 仍执意要工具时，should_use_tools 会直接跳去
+        persist，这些 tool_calls 永远不会被执行。如果带着它们落进 checkpointer，
+        下一轮把历史发给上游（OpenAI 兼容协议）会因「assistant 带 tool_calls
+        却没有配对的 ToolMessage」判 400，整个会话从此卡死。
+        """
+        messages = state.get("messages") or []
+        if not messages:
+            return {}
+        last = messages[-1]
+        calls = getattr(last, "tool_calls", None) or []
+        if not calls:
+            return {}
+
+        logger.warning("工具轮数已用完，丢弃 %d 个未执行的 tool_calls", len(calls))
+        text = last.content or "（检索轮次已用完，我先基于已有信息回答）"
+        fixed = AIMessage(content=text)
+        return {
+            "messages": [RemoveMessage(id=last.id), fixed],
+            "answer": text,
+        }
+
     async def persist(state: AgentState) -> dict[str, Any]:
         """写业务记录（可读版） + 累加当日 token 用量。"""
         thread_id = state.get("thread_id")
@@ -400,6 +430,7 @@ def build_graph(checkpointer=None):
     graph.add_node("route", route)
     graph.add_node("agent", agent)
     graph.add_node("tools", ToolNode(_ALL_TOOLS))
+    graph.add_node("strip_calls", strip_calls)
     graph.add_node("persist", persist)
 
     graph.add_edge(START, "summarize")
@@ -409,9 +440,10 @@ def build_graph(checkpointer=None):
     graph.add_conditional_edges(
         "agent",
         should_use_tools,
-        {"tools": "tools", "persist": "persist"},
+        {"tools": "tools", "persist": "strip_calls"},
     )
     graph.add_edge("tools", "agent")
+    graph.add_edge("strip_calls", "persist")
     graph.add_edge("persist", END)
 
     return graph.compile(checkpointer=checkpointer)
