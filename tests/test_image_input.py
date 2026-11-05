@@ -93,21 +93,56 @@ def test_attachment_only_message_gets_default_text(graph):
     assert "【附件内容】" in user_content
 
 
-def test_non_image_attachment_is_ignored(graph):
-    """PDF 这类附件暂不解析（MinerU 还没接），不应该触发视觉模型。"""
+def test_document_attachment_uses_vector_retrieval(graph, monkeypatch):
+    """PDF 走向量检索：只带回相关段落，绝不触发视觉模型。"""
+    async def fake_embed(text):
+        CAPTURED["embed_query"] = text
+        return [0.1, 0.2, 0.3, 0.4]
+
+    async def fake_search(file_url, vector, top_k):
+        CAPTURED.update(file_url=file_url, top_k=top_k)
+        return ["第三章 动态规划", "状态转移方程：dp[i] = dp[i-1] + dp[i-2]"]
+
+    monkeypatch.setattr(graph_module, "embed_query", fake_embed)
+    monkeypatch.setattr(graph_module, "search_chunks", fake_search)
+
     _run(
         graph,
-        "这份讲义讲了什么",
+        "第三章讲了什么",
         "t-pdf",
         [{"name": "讲义.pdf", "type": "application/pdf", "size": 2048, "url": "https://x/a.pdf"}],
     )
 
     assert "url" not in CAPTURED, "PDF 不该调用视觉模型"
+    assert CAPTURED["file_url"] == "https://x/a.pdf", "必须只在这份文件内部检索"
+    assert CAPTURED["embed_query"] == "第三章讲了什么"
     content = str(CAPTURED["messages"][-1].content)
-    # 不再静默忽略：明确告诉模型「解析未上线」，让它转告用户
     assert "【附件内容】" in content
-    assert "暂不支持解析" in content
-    assert "讲义.pdf" in content
+    assert "第三章 动态规划" in content
+    assert "状态转移方程" in content
+
+
+def test_document_without_hits_tells_model_to_be_honest(graph, monkeypatch):
+    """检索不到内容时，明确告诉模型「别猜」，而不是让它自由发挥。"""
+    async def fake_embed(text):
+        return [0.1, 0.2, 0.3, 0.4]
+
+    async def fake_search(file_url, vector, top_k):
+        return []
+
+    monkeypatch.setattr(graph_module, "embed_query", fake_embed)
+    monkeypatch.setattr(graph_module, "search_chunks", fake_search)
+
+    _run(
+        graph,
+        "这份讲义有讲图论吗",
+        "t-pdf-empty",
+        [{"name": "讲义.pdf", "type": "application/pdf", "size": 2048, "url": "https://x/b.pdf"}],
+    )
+
+    content = str(CAPTURED["messages"][-1].content)
+    assert "没有检索到" in content
+    assert "不要猜测" in content
 
 
 def test_image_text_does_not_leak_into_next_turn(graph):

@@ -6,8 +6,10 @@
 - 所以让视觉模型（glm-4.6v，同一个 GLM key）只负责「看图说人话」，
   输出一段文字，主流程照旧跑文本 + 工具。
 
-代价：多一次模型调用（图片越多越慢），所以节点里限制一次最多读 3 张。
+代价：多一次模型调用（图片越多越慢），所以节点里限制一次最多读 MAX_IMAGES 张。
+一次读 5 张时会并发发起 5 个视觉请求，这里再加一道闸门，避免把 GLM 打到限流。
 """
+import asyncio
 import logging
 
 from openai import APIError, AsyncOpenAI
@@ -16,6 +18,26 @@ from app.common.exceptions import AppError
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# 同时最多几个视觉请求。graph.py 里用 gather 并发读多张图，
+# 没有这道闸门就是「有几张图就发几个请求」。
+_VISION_CONCURRENCY = 3
+_vision_sem: asyncio.Semaphore | None = None
+_vision_sem_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _vision_semaphore() -> asyncio.Semaphore:
+    """取当前事件循环上的信号量。
+
+    理由同 graph.py 的 _model_semaphore：Semaphore 绑定首次使用它的循环，
+    换 loop 再用会挂住且不报错，所以按需创建、loop 变了就重建。
+    """
+    global _vision_sem, _vision_sem_loop
+    loop = asyncio.get_running_loop()
+    if _vision_sem is None or _vision_sem_loop is not loop:
+        _vision_sem = asyncio.Semaphore(_VISION_CONCURRENCY)
+        _vision_sem_loop = loop
+    return _vision_sem
 
 DEFAULT_PROMPT = """请用中文描述这张图片，供后续对话使用：
 1. 图里有文字就逐字提取（OCR），保留标题、编号和换行；
@@ -59,19 +81,20 @@ async def describe_image(url: str, prompt: str = DEFAULT_PROMPT) -> tuple[str, i
     """
     settings = get_settings()
     try:
-        resp = await _get_client().chat.completions.create(
-            model=settings.vision_model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": url}},
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-            max_tokens=1200,
-        )
+        async with _vision_semaphore():
+            resp = await _get_client().chat.completions.create(
+                model=settings.vision_model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": url}},
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+                max_tokens=1200,
+            )
     except APIError as exc:
         logger.error("视觉模型调用失败：%s", exc)
         raise VisionError("图片识别失败，请稍后重试") from exc

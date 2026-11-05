@@ -5,7 +5,8 @@
 
 各节点职责：
     summarize   上下文压缩（SummarizationMiddleware）：早期对话 → 一段摘要
-    image_agent 图片识别：附件里的图片先交给视觉模型转成文字，**所有档位共用**
+    image_agent 附件处理：图片交视觉模型转文字；文档在向量库里检索相关段落，
+                **所有档位共用**
     route       算出本轮意图（只用于日志和接口返回）+ 把本轮用户消息
                 （含图片文字）写进 messages
     agent       调模型。模型可以直接回答，也可以返回 tool_calls 要求调工具
@@ -51,6 +52,7 @@ from app.agent.tools.web import WEB_TOOLS
 from app.common.constants import (
     CHAT_SUMMARY_KEEP,
     CHAT_SUMMARY_TRIGGER,
+    DOC_TOP_K,
     MAX_IMAGES,
     MAX_TOOL_ROUNDS,
 )
@@ -58,6 +60,9 @@ from app.llm.gateway import get_chat_model
 from app.llm.vision import describe_image
 from app.memory.quota import add_usage
 from app.memory.store import MemoryStore
+from app.rag.doc_ingest import is_document
+from app.rag.doc_store import search_chunks
+from app.rag.embedding import embed_query
 
 logger = logging.getLogger(__name__)
 
@@ -97,15 +102,18 @@ ACTIVITY_SYSTEM_PROMPT = (
     + _SWITCH_HINT
 )
 
-# 「资料解读」档：PDF 解析未上线，必须让模型明说，不能假装读过内容
+# 「资料解读」档：文档只给「相关段落」，不是全文，必须让模型知道这个边界
 DOC_SYSTEM_PROMPT = (
     """你是 CampusHub 校园助手，当前在「资料解读」档位。
-用户上传讲义或截图，想让你划重点、做总结。
+用户上传讲义或截图，想让你划重点、做总结、回答问题。
 
 规则：
-1. 图片已经由视觉模型转成文字，附在提问后面的【附件内容】里，直接基于那段文字回答。
-2. PDF / Word 解析功能还未上线：用户传了这类文件要明确说暂不支持，绝不假装读到了内容。
-3. 总结按「重点 / 考点 / 需要补充」分段，不要大段复述原文。
+1. 文档（PDF / Word / txt / md）已经解析成文字，但为了控制成本，只会把**和这次
+   提问最相关的几段**放在提问后面的【附件内容】里，**不是全文**。
+2. 只依据给出的段落回答。段落里没有就直说「这份文档里没找到相关内容」，
+   不要用常识补，也不要假装读过没给到的部分。
+3. 图片附件由视觉模型转成了文字，同样在【附件内容】里，直接基于那段文字回答。
+4. 总结按「重点 / 考点 / 需要补充」分段，不要大段复述原文。
 
 回答风格：中文，条理清楚，可以用短列表。"""
     + _SWITCH_HINT
@@ -190,6 +198,45 @@ def prompt_for_mode(mode: str | None) -> str:
     return _MODE_PROMPTS.get(mode or "", CHAT_SYSTEM_PROMPT)
 
 
+# 全局并发闸门：GLM 有 QPS 限制，超了直接返回 429，用户看到的是「模型服务不可用」。
+# 排队比报错好——多等一两秒，胜过整轮失败。
+# 8 是保守值：不知道当前账号的实际限额，宁可排一会儿。
+_MODEL_CONCURRENCY = 8
+_model_sem: asyncio.Semaphore | None = None
+_model_sem_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _model_semaphore() -> asyncio.Semaphore:
+    """取当前事件循环上的信号量。
+
+    不能模块导入时就建好：asyncio.Semaphore 会绑定首次使用它的循环，换一个
+    循环（pytest 每个用例一个 loop、进程重启）再申请会直接挂住且不报错。
+    所以按需创建，发现 loop 变了就重建——代价可以忽略，换来的是不会挂死。
+    """
+    global _model_sem, _model_sem_loop
+    loop = asyncio.get_running_loop()
+    if _model_sem is None or _model_sem_loop is not loop:
+        _model_sem = asyncio.Semaphore(_MODEL_CONCURRENCY)
+        _model_sem_loop = loop
+    return _model_sem
+
+
+def _handle_tool_error(exc: Exception) -> str:
+    """工具执行失败时，把「失败」这件事告诉模型，而不是让整张图崩掉。
+
+    LangGraph 默认的 _default_handle_tool_errors 只处理 ToolInvocationError
+    （参数校验之类），其它异常一律 raise —— 结果是数据库抖一下、embedding 超时，
+    整个请求就 500，而模型本来完全可以说「查询失败了，稍后再试」。
+
+    注意不能直接把原始异常文本回给模型：里面可能带 SQL 片段、连接串。
+    完整异常只进日志。
+    """
+    # 这里是 ToolNode 在 except 块之外调用的，exc_info=True 取不到原始堆栈，
+    # 必须显式把异常对象传进去，日志里才有完整 traceback。
+    logger.warning("工具执行失败，已降级为错误消息：%s", exc, exc_info=exc)
+    return "工具调用失败（内部错误），请告知用户稍后重试，不要编造数据。"
+
+
 def _localize_summary(patch: dict[str, Any]) -> None:
     """把中间件写死的英文前缀换成中文（摘要正文本身不动）。
 
@@ -212,6 +259,40 @@ def _looks_like_image(item: dict[str, Any]) -> bool:
     if str(item.get("type", "")).startswith("image/"):
         return True
     return str(item.get("name", "")).lower().endswith(_IMAGE_SUFFIXES)
+
+
+async def _document_blocks(documents: list[dict[str, Any]], query: str) -> list[str]:
+    """把和这次提问最相关的几块拼进上下文，而不是整篇塞进去。
+
+    一份 50 页讲义 3 万字，整篇进 prompt 是 3 万 token，日配额才 10 万。
+    这里只取 top 4 块（约 1600 字）。**查询向量化一次、所有文档共用**，
+    所以一轮最多花 1 次 embedding，不会因为传了 3 份文件就花 3 次。
+    """
+    try:
+        vector = await embed_query(query or "这份文档的主要内容")
+    except Exception:
+        logger.exception("文档检索：查询向量化失败")
+        names = "、".join(str(d.get("name") or "文档") for d in documents)
+        return [f"- {names}：正文检索失败，这次读不到内容，请如实告知用户"]
+
+    blocks: list[str] = []
+    for item in documents:
+        name = str(item.get("name") or "文档")
+        try:
+            chunks = await search_chunks(str(item["url"]), vector, DOC_TOP_K)
+        except Exception:
+            logger.exception("文档检索失败：%s", name)
+            chunks = []
+
+        if not chunks:
+            # 解析失败 / 索引没建 / 这份文档确实没有相关内容——三种都只能如实说
+            blocks.append(
+                f"- {name}：没有检索到与这次提问相关的内容"
+                "（可能解析失败，也可能文档里确实没有），请如实说明，不要猜测"
+            )
+            continue
+        blocks.append(f"- {name} 的相关段落：\n" + "\n---\n".join(chunks))
+    return blocks
 
 
 def _tokens_of(resp: AIMessage, prompt_messages: list) -> int:
@@ -270,26 +351,41 @@ def build_graph(checkpointer=None):
         return patch
 
     async def image_agent(state: AgentState) -> dict[str, Any]:
-        """图片识别节点：所有意图都会先经过这里。
+        """附件处理节点：所有档位都会先经过这里。
 
-        一次最多读 MAX_IMAGES 张：每张都是一次视觉模型调用，图片多了又慢又贵。
-        单张失败只降级成一行说明，不让整轮对话挂掉。
+        三类附件走三条路：
+            图片  → 视觉模型转文字（一次最多 MAX_IMAGES 张，每张一次调用）
+            文档  → 在 Milvus Lite 里按这次提问检索相关段落，只带回 top 4 块
+            其它  → 明确告诉模型「处理不了」，不让它对着文件名瞎猜
 
-        ⚠️ 没有新图时必须显式清空 attachment_text / vision_tokens：
+        单张图 / 单份文档失败只降级成一行说明，不让整轮对话挂掉。
+
+        ⚠️ 没有新附件时必须显式清空 attachment_text / vision_tokens：
         checkpointer 会把上一轮的值留在状态里，不清的话它会拼进之后**每一轮**
         的提问（表现为「换了话题它还在说那张图」），配额也会重复计。
         """
         attachments = state.get("attachments") or []
         images: list[dict[str, Any]] = []
+        documents: list[dict[str, Any]] = []
         unsupported: list[dict[str, Any]] = []
         for item in attachments:
-            (images if _looks_like_image(item) and item.get("url") else unsupported).append(item)
+            if _looks_like_image(item) and item.get("url"):
+                images.append(item)
+            elif item.get("url") and is_document(str(item.get("type") or ""), str(item.get("name") or "")):
+                documents.append(item)
+            else:
+                unsupported.append(item)
 
         blocks: list[str] = []
+
+        # 文档：按这次提问做向量检索，只带回最相关的几块（不是全文）
+        if documents:
+            blocks.extend(await _document_blocks(documents, state.get("query") or ""))
+
         if unsupported:
             # 明确告诉模型"这些附件处理不了"，而不是让它对着一堆文件名瞎猜
             names = "、".join(str(s.get("name") or "未知文件") for s in unsupported)
-            blocks.append(f"（附件 {names} 暂不支持解析，如被问到请说明文档解析功能还未上线）")
+            blocks.append(f"（附件 {names} 暂不支持解析，如被问到请如实说明）")
             if any(not s.get("url") for s in unsupported):
                 logger.warning(
                     "image_agent：附件缺 url（前端未走 /assistant/upload？）：%s",
@@ -358,13 +454,17 @@ def build_graph(checkpointer=None):
         """调模型：要么直接回答，要么返回 tool_calls 要求调工具。"""
         rounds = state.get("tool_rounds", 0)
         tools = tools_for_mode(state.get("mode"))
-        # 跑满轮数后不再给工具，逼模型基于已有信息作答，避免死循环
-        runnable = model.bind_tools(tools) if tools and rounds < MAX_TOOL_ROUNDS else model
+        # 这里不用判断轮数：should_use_tools 只在 rounds < MAX_TOOL_ROUNDS 时
+        # 才把流程送进 agent，走到这里一定还有轮次可用（以前那句
+        # `rounds < MAX_TOOL_ROUNDS` 是永远成立的条件，留着会让人误以为
+        # agent 自己负责截断）。
+        runnable = model.bind_tools(tools) if tools else model
 
         system_prompt = prompt_for_mode(state.get("mode"))
         messages = [SystemMessage(content=system_prompt), *(state.get("messages") or [])]
 
-        resp: AIMessage = await runnable.ainvoke(messages)
+        async with _model_semaphore():
+            resp: AIMessage = await runnable.ainvoke(messages)
         calls = getattr(resp, "tool_calls", None) or []
         if calls:
             logger.info(
@@ -429,7 +529,7 @@ def build_graph(checkpointer=None):
     graph.add_node("image_agent", image_agent)
     graph.add_node("route", route)
     graph.add_node("agent", agent)
-    graph.add_node("tools", ToolNode(_ALL_TOOLS))
+    graph.add_node("tools", ToolNode(_ALL_TOOLS, handle_tool_errors=_handle_tool_error))
     graph.add_node("strip_calls", strip_calls)
     graph.add_node("persist", persist)
 

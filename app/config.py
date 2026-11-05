@@ -85,6 +85,22 @@ class Settings:
         # ===== 向量库（Milvus） =====
         self.milvus_uri: str = _env("MILVUS_URI")
 
+        # ===== Milvus Lite：进程内向量库，存附件切块 =====
+        # 不填就用项目内的数据文件。它是个本地文件，不需要任何服务端，
+        # 所以附件检索不依赖「那台虚拟机起没起」。
+        self.milvus_lite_path: str = _env(
+            "MILVUS_LITE_PATH", str(BASE_DIR / "data" / "rag" / "milvus.db")
+        )
+
+        # ===== MinerU 云端文档解析（PDF / Word → markdown） =====
+        # 流程：把 OSS 地址交给 MinerU，它自己下载 → 轮询任务 → 拿 zip 里的 full.md
+        self.mineru_api_key: str = _env("MINERU_API_KEY")
+        self.mineru_base_url: str = _env("MINERU_BASE_URL", "https://mineru.net")
+        # pipeline 更快更便宜；vlm 对复杂版式更准但更慢，按需改
+        self.mineru_model: str = _env("MINERU_MODEL", "pipeline")
+        # 单份文档解析的等待上限（秒）。超时就当作失败，不让上传接口无限挂着。
+        self.mineru_timeout: int = _env_int("MINERU_TIMEOUT", 180)
+
         # ===== 联网搜索（Tavily） =====
         self.tavily_api_key: str = _env("TAVILY_API_KEY")
 
@@ -163,6 +179,11 @@ class Settings:
     @property
     def milvus_configured(self) -> bool:
         return bool(self.milvus_uri)
+
+    @property
+    def mineru_configured(self) -> bool:
+        """配了 key 才做文档解析；没配时上传照常成功，只是不解析。"""
+        return bool(self.mineru_api_key)
 
     @property
     def rabbitmq_configured(self) -> bool:

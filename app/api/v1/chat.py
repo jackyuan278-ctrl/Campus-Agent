@@ -11,7 +11,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
-from app.common.exceptions import QuotaExceededError
+from app.agent.locks import thread_lock
+from app.common.exceptions import AppError, QuotaExceededError
 from app.common.security import require_user_id
 from app.memory.ownership import ensure_owner
 from app.memory.quota import get_quota
@@ -77,16 +78,18 @@ async def chat(
     config = {"configurable": {"thread_id": request.thread_id}}
 
     # 非流式：直接跑完整张图，一次性返回（结构与旧版一致）
+    # 同一会话必须串行：checkpointer 是 last-write-wins，并发会静默覆盖历史
     if not stream:
-        try:
-            result = await graph.ainvoke(inputs, config)
-        except Exception as exc:
-            if not _is_conn_error(exc):
-                raise
-            # ping 通过但真正执行时断开：强制重建图再重试一次
-            logger.warning("执行时连接异常，重建后重试一次：%s", exc)
-            graph = await http_request.app.state.agent_runtime.recover()
-            result = await graph.ainvoke(inputs, config)
+        async with thread_lock(request.thread_id):
+            try:
+                result = await graph.ainvoke(inputs, config)
+            except Exception as exc:
+                if not _is_conn_error(exc):
+                    raise
+                # ping 通过但真正执行时断开：强制重建图再重试一次
+                logger.warning("执行时连接异常，重建后重试一次：%s", exc)
+                graph = await http_request.app.state.agent_runtime.recover()
+                result = await graph.ainvoke(inputs, config)
         return {
             "data": {
                 "content": result.get("answer", ""),
@@ -97,24 +100,32 @@ async def chat(
 
     async def event_stream():
         # SSE 注释帧：浏览器立刻收到首字节，连接状态可见（前端解析器会跳过非 data: 行）
+        # 放在拿锁之前：前端能立刻看到「已连接」，然后再排队等同一会话的前一个请求
         yield ": connected\n\n"
-        try:
-            async for event in graph.astream_events(inputs, config, version="v2"):
-                if event["event"] != "on_chat_model_stream":
-                    continue
-                # 只转发 agent 节点的模型输出。摘要在 summarize 节点里也会调模型，
-                # 不过滤的话摘要正文会漏进用户的聊天框。
-                if (event.get("metadata") or {}).get("langgraph_node") != "agent":
-                    continue
-                text = getattr(event["data"].get("chunk"), "content", "") or ""
-                if text:
-                    yield _sse({"delta": text})
-        except Exception as exc:  # 上游失败也要让前端看得见，否则只能看到"转圈然后没反应"
-            logger.exception("对话流式输出失败")
-            # 前端只认 delta 字段，所以把错误也放进 delta，保证能显示在聊天框里
-            yield _sse({"delta": f"\n\n（服务异常，请稍后重试）{exc}", "error": str(exc)})
-        finally:
-            yield "data: [DONE]\n\n"
+        async with thread_lock(request.thread_id):
+            try:
+                async for event in graph.astream_events(inputs, config, version="v2"):
+                    if event["event"] != "on_chat_model_stream":
+                        continue
+                    # 只转发 agent 节点的模型输出。摘要在 summarize 节点里也会调模型，
+                    # 不过滤的话摘要正文会漏进用户的聊天框。
+                    if (event.get("metadata") or {}).get("langgraph_node") != "agent":
+                        continue
+                    text = getattr(event["data"].get("chunk"), "content", "") or ""
+                    if text:
+                        yield _sse({"delta": text})
+            except AppError as exc:
+                # 业务异常（LLMError / QuotaExceededError 等）的 message 是预定义文案，
+                # 可以直接给用户看——比如「模型服务暂时不可用」。
+                logger.warning("对话失败（业务异常 %s）：%s", exc.code, exc.message)
+                yield _sse({"delta": f"\n\n（{exc.message}）", "error": str(exc.code)})
+            except Exception:  # 未知异常一律兜住，否则前端只看到转圈
+                # 未知异常的原文**绝不能**推给前端：里面可能带数据库地址、SQL 片段、
+                # 文件路径。排查靠服务端日志，前端只需要知道「这次没成功」。
+                logger.exception("对话流式输出失败")
+                yield _sse({"delta": "\n\n（服务异常，请稍后重试）", "error": "internal_error"})
+            finally:
+                yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_stream(),

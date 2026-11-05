@@ -22,6 +22,8 @@ dependencies = [
     "alibabacloud-oss-v2>=1.4.1",
     "python-multipart>=0.0.33",
     "aio-pika>=10.2.2",
+    "pymilvus[milvus-lite]>=3.0.2",
+    "milvus-lite>=3.2.2",
 ]
 
 [dependency-groups]

@@ -24,6 +24,7 @@ from app.database import dispose_all, get_activity_engine, get_community_engine
 from app.rag.embedding import aclose as close_embedding
 from app.rag.embedding import embed_texts
 from app.rag.index import VectorIndex
+from app.rag.write_lock import index_write_lock
 
 logger = logging.getLogger(__name__)
 
@@ -154,33 +155,36 @@ async def build_index(limit_per_source: int = 200, incremental: bool = True) -> 
 
     # 旧索引按指纹建表：老数据没有 fingerprint 字段，用 text 现算（不花钱）
     old_by_fp: dict[str, int] = {}
-    old = VectorIndex.load() if incremental else None
-    if old is not None:
-        for row, doc in enumerate(old.docs):
-            old_fp = doc.get("fingerprint") or fingerprint(doc.get("text", ""))
-            old_by_fp.setdefault(old_fp, row)  # 同指纹只认第一行
+    # 从读旧索引到落盘整段加锁：两个写入方（消费者 / 手动 ingest）同时跑时，
+    # 各自基于同一份旧索引计算，后写的会盖掉前一个的改动。
+    async with index_write_lock():
+        old = VectorIndex.load() if incremental else None
+        if old is not None:
+            for row, doc in enumerate(old.docs):
+                old_fp = doc.get("fingerprint") or fingerprint(doc.get("text", ""))
+                old_by_fp.setdefault(old_fp, row)  # 同指纹只认第一行
 
-    vectors: list[list[float] | None] = []
-    pending: list[tuple[int, str]] = []
-    for doc in docs:
-        row = old_by_fp.get(doc["fingerprint"])
-        if row is not None:
-            vectors.append(old.vectors[row].tolist())  # 复用，零成本
+        vectors: list[list[float] | None] = []
+        pending: list[tuple[int, str]] = []
+        for doc in docs:
+            row = old_by_fp.get(doc["fingerprint"])
+            if row is not None:
+                vectors.append(old.vectors[row].tolist())  # 复用，零成本
+            else:
+                vectors.append(None)
+                pending.append((len(vectors) - 1, doc["text"]))
+
+        reused = len(docs) - len(pending)
+        if pending:
+            logger.info("需要向量化 %d 条（复用旧向量 %d 条）", len(pending), reused)
+            fresh = await embed_texts([t for _, t in pending])
+            for (pos, _), vector in zip(pending, fresh):
+                vectors[pos] = vector
         else:
-            vectors.append(None)
-            pending.append((len(vectors) - 1, doc["text"]))
+            logger.info("全部复用旧向量（%d 条），本次 0 次 embedding 调用", reused)
 
-    reused = len(docs) - len(pending)
-    if pending:
-        logger.info("需要向量化 %d 条（复用旧向量 %d 条）", len(pending), reused)
-        fresh = await embed_texts([text for _, text in pending])
-        for (pos, _), vector in zip(pending, fresh):
-            vectors[pos] = vector
-    else:
-        logger.info("全部复用旧向量（%d 条），本次 0 次 embedding 调用", reused)
-
-    index = VectorIndex.build(vectors, docs)
-    index.save()
+        index = VectorIndex.build(vectors, docs)
+        index.save()
     return index
 
 

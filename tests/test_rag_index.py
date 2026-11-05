@@ -30,3 +30,32 @@ def test_dimension_mismatch_raises():
 
 def test_empty_index_returns_empty():
     assert VectorIndex.build([], []).search([1.0, 0.0]) == []
+
+
+def test_load_rejects_mismatched_rows(tmp_path):
+    """向量行数和文档条数对不上时必须报错，不能静默返回错位结果。
+
+    vectors.npy 本身不知道每行对应哪个文档，全靠「第 i 行 ↔ docs[i]」这个约定。
+    一旦错位，search 会把分数安到错误的文档上，而且完全不报错——比直接崩更糟。
+    """
+    import json
+
+    idx = VectorIndex.build([[1.0, 0.0], [0.0, 1.0]], [{"title": "a"}, {"title": "b"}])
+    idx.save(tmp_path)
+
+    docs = json.loads((tmp_path / "docs.json").read_text(encoding="utf-8"))
+    (tmp_path / "docs.json").write_text(json.dumps(docs[:1]), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="索引文件损坏"):
+        VectorIndex.load(tmp_path)
+
+
+def test_save_is_atomic(tmp_path):
+    """保存后不能残留 .tmp 文件，且两个文件都能正常读回。"""
+    idx = VectorIndex.build([[1.0, 0.0]], [{"title": "a"}])
+    idx.save(tmp_path)
+
+    assert not list(tmp_path.glob("*.tmp")), "原子写不应留下临时文件"
+    loaded = VectorIndex.load(tmp_path)
+    assert loaded is not None
+    assert len(loaded.docs) == 1

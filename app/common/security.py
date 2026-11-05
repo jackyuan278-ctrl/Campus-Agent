@@ -53,18 +53,6 @@ def parse_user_id(authorization: str | None) -> str | None:
     return str(subject) if subject else None
 
 
-def resolve_user_key(authorization: str | None, thread_id: str) -> str:
-    """配额统计用的用户标识。
-
-    有合法 token → user:<userId>（跨线程、跨设备都算一个人）
-    否则 → anon:<threadId>（仅用于本地调试；线上接口都要求登录）
-    """
-    user_id = parse_user_id(authorization)
-    if user_id:
-        return f"user:{user_id}"
-    return f"anon:{thread_id}"
-
-
 def require_user_id(request) -> str:
     """要求登录：解析不出 userId 就抛 401（对齐 campus-hub 网关的行为）。
 

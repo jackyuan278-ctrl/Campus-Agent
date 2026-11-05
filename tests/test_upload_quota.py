@@ -11,16 +11,27 @@ from tests.conftest import TEST_USER_ID, make_token
 
 
 def test_upload_returns_url(client, monkeypatch):
-    """上传接口把文件交给 upload_bytes，返回 {data: {url, key, size}}。"""
+    """上传接口：预检额度 → 传文件 → 成功后才扣次数。
+
+    顺序是被刻意断言的：如果先扣次数再上传，OSS 失败时用户会白损失一次当天的
+    上传额度（网络抖几下当天就没法传了）。
+    """
     captured = {}
+    calls = []
+
+    async def fake_check(user_key):
+        calls.append("check_quota")
 
     async def fake_consume(user_key):
+        calls.append("consume")
         captured["user_key"] = user_key
 
     async def fake_upload(data, filename, content_type):
+        calls.append("upload")
         captured.update(data=data, filename=filename, content_type=content_type)
         return {"url": "https://example.com/a.png", "key": "k/a.png", "size": len(data)}
 
+    monkeypatch.setattr(upload_module, "check_upload_quota", fake_check)
     monkeypatch.setattr(upload_module, "consume_upload", fake_consume)
     monkeypatch.setattr(upload_module, "upload_bytes", fake_upload)
 
@@ -35,6 +46,7 @@ def test_upload_returns_url(client, monkeypatch):
     assert captured["filename"] == "note.png"
     # 上传次数记在登录用户头上，而不是 anon
     assert captured["user_key"] == f"user:{TEST_USER_ID}"
+    assert calls == ["check_quota", "upload", "consume"], "顺序必须是先查、再传、最后扣"
 
 
 def test_quota_exceeded_blocks_request(client, monkeypatch):

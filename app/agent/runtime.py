@@ -55,9 +55,17 @@ class AgentRuntime:
             await self._close()
 
     async def get_graph(self) -> Any:
-        """取图。连接失效时先重建再返回。"""
+        """取图。健康时走无锁快路径，只有需要重建时才抢锁。
+
+        之前是「每个请求都先拿锁、再 ping」，等于把所有并发请求串行化在一把
+        锁上，而它们其实只是想读一下 self._graph 这个引用。
+        """
+        if self._graph is not None and await self._is_healthy():
+            return self._graph
+
         async with self._lock:
-            if not await self._is_healthy():
+            # 双检：等锁期间别的请求可能已经重建好了
+            if self._graph is None or not await self._is_healthy():
                 logger.warning("checkpointer 连接不可用，正在重建…")
                 await self._rebuild()
             return self._graph

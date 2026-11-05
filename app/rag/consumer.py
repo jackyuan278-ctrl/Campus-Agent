@@ -23,15 +23,98 @@ Java 侧（campus-hub）发消息示例：
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import aio_pika
+from sqlalchemy import text
 
 from app.config import get_settings
-from app.database import dispose_all
+from app.database import dispose_all, get_agent_engine
 from app.rag.embedding import aclose as close_embedding
 from app.rag.indexer import reindex_one
 
 logger = logging.getLogger(__name__)
+
+# MySQL 命名锁的名字。同一时刻只允许一个消费者持有。
+_LOCK_NAME = "campus_agent_index_consumer"
+
+# 保活间隔。MySQL 的 wait_timeout 默认 8 小时，会把长时间空闲的连接断掉；
+# 连接一断，这条连接持有的 GET_LOCK 就随之释放，而进程还在正常消费——
+# 单实例保护静默失效，重复启动也不会被拦住。所以定期确认锁还在自己手上。
+_LOCK_KEEPALIVE_SECONDS = 30 * 60
+
+
+async def _keep_lock_alive(conn) -> None:
+    """定期确认锁仍由本连接持有；发现丢了就重新抢，抢不到只告警不退出。
+
+    为什么不直接再调一次 GET_LOCK：MySQL 5.7+ 里同一会话重复 GET_LOCK 会
+    累加持有计数，需要同样多次 RELEASE_LOCK 才真正释放。先用 IS_USED_LOCK
+    对比 CONNECTION_ID，确认没丢就什么都不做。
+    """
+    while True:
+        await asyncio.sleep(_LOCK_KEEPALIVE_SECONDS)
+        try:
+            row = (
+                await conn.execute(
+                    text("SELECT IS_USED_LOCK(:name), CONNECTION_ID()"), {"name": _LOCK_NAME}
+                )
+            ).first()
+        except Exception:
+            logger.exception("消费者锁保活检查失败，下次再试")
+            continue
+
+        holder, own = (row[0], row[1]) if row else (None, None)
+        if holder is not None and own is not None and int(holder) == int(own):
+            continue
+
+        logger.warning("消费者锁已丢失（holder=%s, 本连接=%s），尝试重新获取", holder, own)
+        try:
+            got = (
+                await conn.execute(
+                    text("SELECT GET_LOCK(:name, 0)"), {"name": _LOCK_NAME}
+                )
+            ).scalar()
+        except Exception:
+            logger.exception("重新获取消费者锁失败")
+            continue
+        if got == 1:
+            logger.info("已重新获得消费者锁：%s", _LOCK_NAME)
+        else:
+            # 另一个进程抢先了。不停摆：停了两边都没人消费更糟，这里只提醒排查。
+            logger.error("消费者锁被其他进程持有（%s），本进程可能重复消费，请确认是否重复启动", _LOCK_NAME)
+
+
+@asynccontextmanager
+async def _exclusive_lock() -> AsyncIterator[None]:
+    """保证同时只有一个消费者进程在跑。
+
+    为什么要这个：uvicorn 开多 worker、或者手滑起了两个进程，同一条消息会被
+    处理多次。虽然 reindex_one 是幂等的（结果一样），但每次都要花一次 embedding
+    调用——白烧钱。
+
+    用 MySQL 的 GET_LOCK 而不是文件锁：连接断开时 MySQL 会自动释放锁，
+    所以进程被 kill -9 也不会留下需要手工清理的死锁。
+    """
+    engine = get_agent_engine()
+    async with engine.connect() as conn:
+        got = (
+            await conn.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": _LOCK_NAME})
+        ).scalar()
+        if got != 1:
+            raise RuntimeError(
+                f"已有消费者持有锁 {_LOCK_NAME}，本进程退出（确认是否重复启动）"
+            )
+        logger.info("已获得消费者锁：%s", _LOCK_NAME)
+        keeper = asyncio.create_task(_keep_lock_alive(conn))
+        try:
+            yield
+        finally:
+            keeper.cancel()
+            try:
+                await conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": _LOCK_NAME})
+            except Exception:  # noqa: BLE001 - 释放失败不影响退出，连接断开也会自动释放
+                logger.warning("释放消费者锁失败（连接断开时会自动释放）")
 
 
 async def _handle(body: bytes) -> str:
@@ -54,7 +137,7 @@ async def consume() -> None:
     logger.info("连接 RabbitMQ 并监听队列 %s", queue_name)
     connection = await aio_pika.connect_robust(settings.rabbitmq_url)
 
-    async with connection:
+    async with connection, _exclusive_lock():
         channel = await connection.channel()
         # 索引文件不是并发安全的，必须一条一条处理
         await channel.set_qos(prefetch_count=1)

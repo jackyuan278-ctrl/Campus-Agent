@@ -11,6 +11,22 @@ import sys
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 
 
+class _DropKnownNoise(logging.Filter):
+    """丢掉第三方库已知无害的噪音日志。
+
+    目前只有一条：Milvus Lite 的 gRPC 服务端没实现 AllocTimestamp，客户端连上来
+    探测时会打一句 "Method not implemented!"（ERROR 级别）。功能完全正常，
+    但每次建集合都刷一条 ERROR，会淹掉真正的错误。
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        noisy = (
+            record.name.startswith("grpc")
+            and "Method not implemented" in record.getMessage()
+        )
+        return not noisy
+
+
 def setup_logging() -> None:
     """初始化根 logger。重复调用不会叠加 handler。"""
     logging.basicConfig(
@@ -22,3 +38,4 @@ def setup_logging() -> None:
         ],
         force=False,
     )
+    logging.getLogger("grpc").addFilter(_DropKnownNoise())

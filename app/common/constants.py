@@ -27,3 +27,11 @@ MAX_TOOL_ROUNDS = 3
 # 与前端 ATTACHMENT_RULES.maxCount 对齐：前端允许传 5 个附件，这里也得能读 5 张，
 # 不然第 4、5 张会被静默丢掉，用户完全不知道。
 MAX_IMAGES = 5
+
+# ---------- 文档解析与切块 ----------
+# 一份 50 页讲义约 3 万字，整篇塞进 prompt 是 3 万 token——日配额 10 万，三轮就爆。
+# 所以切块后只带最相关的几块进去。
+DOC_CHUNK_SIZE = 400      # 每块目标字数
+DOC_CHUNK_OVERLAP = 80    # 相邻块重叠，避免答案正好被切断
+# 每轮带几块进 prompt：4 块 ≈ 1600 字 ≈ 1000 token
+DOC_TOP_K = 4

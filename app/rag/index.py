@@ -6,6 +6,7 @@
 """
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -109,12 +110,23 @@ class VectorIndex:
     # ---------- 落盘 / 加载 ----------
 
     def save(self, directory: Path | None = None) -> Path:
+        """原子落盘：先写临时文件，两个都成功了再替换。
+
+        为什么不直接写目标文件：先 np.save 再写 json，中间崩溃就会留下
+        「新向量 + 旧文档」的不一致状态，行数对不上 → 检索把分数安到错误的
+        文档上，而且完全不会报错。os.replace 在同一文件系统内是原子操作。
+        """
         target = directory or INDEX_DIR
         target.mkdir(parents=True, exist_ok=True)
-        np.save(target / VECTORS_FILE, self.vectors)
-        (target / DOCS_FILE).write_text(
-            json.dumps(self.docs, ensure_ascii=False), encoding="utf-8"
-        )
+
+        vec_tmp = target / f"{VECTORS_FILE}.tmp"
+        doc_tmp = target / f"{DOCS_FILE}.tmp"
+        with open(vec_tmp, "wb") as fp:
+            np.save(fp, self.vectors)  # 传文件对象时不会自动补 .npy 后缀
+        doc_tmp.write_text(json.dumps(self.docs, ensure_ascii=False), encoding="utf-8")
+
+        os.replace(vec_tmp, target / VECTORS_FILE)
+        os.replace(doc_tmp, target / DOCS_FILE)
         logger.info("索引已保存：%s（%d 条，维度 %d）", target, len(self.docs), self.dim)
         return target
 
@@ -128,5 +140,13 @@ class VectorIndex:
             return None
         vectors = np.load(vectors_path)
         docs = json.loads(docs_path.read_text(encoding="utf-8"))
+
+        # 行数必须严格对齐：向量矩阵本身不知道每行对应哪个文档，
+        # 全靠「第 i 行 ↔ docs[i]」这个约定。一旦错位，检索会返回
+        # 分数和文档不匹配的结果，而且静默——必须在这里拦住。
+        if vectors.shape[0] != len(docs):
+            raise ValueError(
+                f"索引文件损坏：向量 {vectors.shape[0]} 行、文档 {len(docs)} 条，请重建索引"
+            )
         logger.info("索引已加载：%d 条，维度 %d", len(docs), vectors.shape[1])
         return cls(vectors=vectors, docs=docs)

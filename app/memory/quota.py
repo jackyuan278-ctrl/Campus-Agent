@@ -63,9 +63,30 @@ async def add_usage(user_key: str, tokens: int) -> None:
     logger.info("用量 +%d tokens（%s）", tokens, user_key)
 
 
+async def check_upload_quota(user_key: str) -> None:
+    """只读检查上传额度，不扣次数。超限直接抛。
+
+    上传接口的流程是「预检 → 传 OSS → 成功后扣」，所以这里必须先有一个
+    「只查不扣」的入口：否则超额用户白跑一次上传，或者上传失败也把额度吃掉。
+    """
+    limit = get_settings().daily_upload_limit
+    sql = text(
+        "SELECT upload_count FROM tb_upload_usage "
+        "WHERE user_key = :key AND usage_date = CURDATE()"
+    )
+    async with get_agent_engine().connect() as conn:
+        row = (await conn.execute(sql, {"key": user_key})).first()
+    used = int(row[0]) if row else 0
+    if used >= limit:
+        raise QuotaExceededError(f"每天最多上传 {limit} 个文件，明天再来")
+
+
 async def consume_upload(user_key: str) -> None:
     """上传次数配额：每人每天最多 DAILY_UPLOAD_LIMIT 次。
 
+    调用时机是「OSS 上传成功之后」——失败不该让用户白损失一次额度。
+    所以这里不再做超限判断（上一道 check_upload_quota 已经拦过），
+    但仍保留一次，防止两个请求同时通过预检。
     先查后加，两次并发可能少拦一次，但不会多拦——宁可放行也不误伤。
     """
     limit = get_settings().daily_upload_limit

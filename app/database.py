@@ -8,6 +8,7 @@
 - 连接池由 main.py 的 lifespan 在应用退出时统一 dispose（注意是 await）
 """
 import logging
+import threading
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -17,19 +18,28 @@ logger = logging.getLogger(__name__)
 
 # 库名 -> AsyncEngine（懒加载，避免启动即连库失败）
 _engines: dict[str, AsyncEngine] = {}
+# 双检锁：协程里的同步函数本身不会被打断，但 sync 端点跑在线程池里，
+# 两个线程同时首次取同一个库会各建一个 engine，其中一个永远不 dispose（连接泄漏）。
+_lock = threading.Lock()
 
 
 def get_engine(db_name: str) -> AsyncEngine:
     """获取指定库的 AsyncEngine，首次调用时创建并缓存。"""
-    if db_name not in _engines:
-        settings = get_settings()
-        logger.info("创建数据库连接池：%s@%s/%s", settings.mysql_user, settings.mysql_host, db_name)
-        _engines[db_name] = create_async_engine(
-            settings.db_url(db_name),
-            pool_pre_ping=True,
-            pool_recycle=3600,
-            echo=False,
-        )
+    engine = _engines.get(db_name)
+    if engine is not None:
+        return engine
+    with _lock:
+        if db_name not in _engines:  # 双检：可能别的线程刚建好
+            settings = get_settings()
+            logger.info(
+                "创建数据库连接池：%s@%s/%s", settings.mysql_user, settings.mysql_host, db_name
+            )
+            _engines[db_name] = create_async_engine(
+                settings.db_url(db_name),
+                pool_pre_ping=True,
+                pool_recycle=3600,
+                echo=False,
+            )
     return _engines[db_name]
 
 

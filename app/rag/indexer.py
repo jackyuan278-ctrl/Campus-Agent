@@ -17,6 +17,7 @@ from app.rag.embedding import aclose as close_embedding
 from app.rag.embedding import embed_texts
 from app.rag.index import VectorIndex
 from app.rag.ingest import fingerprint, load_activity, load_question
+from app.rag.write_lock import index_write_lock
 
 logger = logging.getLogger(__name__)
 
@@ -38,29 +39,32 @@ async def reindex_one(source: str, doc_id: int) -> str:
         logger.warning("未知的 source=%r（只支持 %s），忽略", source, list(LOADERS))
         return "skipped"
 
-    index = VectorIndex.load()
-    if index is None:
-        logger.warning("索引文件不存在，跳过单条更新（先跑一次全量 ingest 建基线）")
-        return "skipped"
+    # 读索引 → 改 → 落盘整段加锁：手动跑全量 ingest 时，不加锁会和这里
+    # 各自基于同一份旧索引计算，后写的盖掉前一个的改动。
+    async with index_write_lock():
+        index = VectorIndex.load()
+        if index is None:
+            logger.warning("索引文件不存在，跳过单条更新（先跑一次全量 ingest 建基线）")
+            return "skipped"
 
-    doc = await loader(doc_id)
-    trimmed = index.without(source, doc_id)
+        doc = await loader(doc_id)
+        trimmed = index.without(source, doc_id)
 
-    if doc is None:
-        trimmed.save()
-        logger.info("索引删除 %s:%s（已下架或记录不存在）", source, doc_id)
-        return "deleted"
+        if doc is None:
+            trimmed.save()
+            logger.info("索引删除 %s:%s（已下架或记录不存在）", source, doc_id)
+            return "deleted"
 
-    # 先按内容指纹删一遍：库里可能已有一条内容完全相同的旧文档，
-    # 不删的话增量会重新制造出重复向量。
-    fp = fingerprint(doc["text"])
-    trimmed = trimmed.without_fingerprint(fp)
+        # 先按内容指纹删一遍：库里可能已有一条内容完全相同的旧文档，
+        # 不删的话增量会重新制造出重复向量。
+        fp = fingerprint(doc["text"])
+        trimmed = trimmed.without_fingerprint(fp)
 
-    doc["fingerprint"] = fp
-    vector = (await embed_texts([doc["text"]]))[0]
-    trimmed.append(doc, vector).save()
-    logger.info("索引更新 %s:%s → %s", source, doc_id, (doc.get("title") or "")[:24])
-    return "upserted"
+        doc["fingerprint"] = fp
+        vector = (await embed_texts([doc["text"]]))[0]
+        trimmed.append(doc, vector).save()
+        logger.info("索引更新 %s:%s → %s", source, doc_id, (doc.get("title") or "")[:24])
+        return "upserted"
 
 
 async def _main(source: str, doc_id: int) -> None:

@@ -13,8 +13,10 @@ from app.common.exceptions import AppError, ConfigError
 from app.common.logger import setup_logging
 from app.config import get_settings
 from app.database import dispose_all
+from app.llm import mineru
 from app.llm.gateway import llm_gateway
 from app.llm.vision import aclose as close_vision
+from app.rag import doc_store
 from app.rag import embedding as rag_embedding
 
 logger = logging.getLogger(__name__)
@@ -56,7 +58,9 @@ async def lifespan(app: FastAPI):
         await runtime.aclose()
         await llm_gateway.aclose()
         await close_vision()
+        await mineru.aclose()
         await rag_embedding.aclose()
+        doc_store.aclose()
         await dispose_all()
         logger.info("服务已关闭")
 
