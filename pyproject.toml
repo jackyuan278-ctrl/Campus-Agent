@@ -24,6 +24,9 @@ dependencies = [
     "aio-pika>=10.2.2",
     "pymilvus[milvus-lite]>=3.0.2",
     "milvus-lite>=3.2.2",
+    # PDF 文本层直抽：纯 wheel（自带 pdfium），无系统依赖。
+    # 有文本层的 PDF 用它 0.01 秒搞定，不必花 60 秒走 MinerU。
+    "pypdfium2>=4.0",
 ]
 
 [dependency-groups]

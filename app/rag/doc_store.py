@@ -20,6 +20,7 @@ from pathlib import Path
 from pymilvus import MilvusClient
 
 from app.config import get_settings
+from app.rag.chunker import Chunk
 
 logger = logging.getLogger(__name__)
 
@@ -86,22 +87,37 @@ def _escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _as_chunk(item) -> Chunk:
+    """兼容两种入参：Chunk 对象，或纯字符串（老调用方）。"""
+    return item if isinstance(item, Chunk) else Chunk(text=str(item))
+
+
 async def upsert_chunks(
     file_url: str,
     file_name: str,
-    chunks: list[str],
+    chunks: list[Chunk] | list[str],
     vectors: list[list[float]],
+    image_texts: dict[int, str] | None = None,
 ) -> int:
     """写入一份文件的全部块。返回写入条数。
 
     先按 file_url 删掉旧块再插入：同一份文件重复上传（或重试）时不会残留
     两套向量，语义上和「整份文件覆盖」一致。
+
+    image_texts: {块序号: 视觉模型对该块所属图片的描述}。**单独一个字段，不拼进 text**——
+        图片描述不该参与向量计算（否则改一次 OCR 就得重算全部向量），
+        但检索命中后要一起带给模型，所以存下来、在 search_chunks 里拼。
+
+    page / kind 同理：是随块携带的标签，不参与向量。page=0 表示「这份文档没有页码概念」
+    （docx、扫描件），不是第 0 页。
     """
     if not chunks:
         return 0
     if len(chunks) != len(vectors):
         raise ValueError(f"块数({len(chunks)})与向量数({len(vectors)})不一致")
 
+    image_texts = image_texts or {}
+    items = [_as_chunk(c) for c in chunks]
     dim = len(vectors[0])
 
     def _work() -> int:
@@ -114,9 +130,12 @@ async def upsert_chunks(
                 "file_url": file_url,
                 "file_name": file_name,
                 "chunk_index": i,
-                "text": text,
+                "text": item.text,
+                "page": item.page or 0,
+                "kind": item.kind,
+                "image_text": image_texts.get(i, ""),
             }
-            for i, text in enumerate(chunks)
+            for i, item in enumerate(items)
         ]
         client.insert(COLLECTION, rows)
         client.flush(COLLECTION)
@@ -129,7 +148,13 @@ async def upsert_chunks(
 
 
 async def search_chunks(file_url: str, vector: list[float], top_k: int) -> list[str]:
-    """在一份文件内部检索最相关的块。文件没索引过时返回空列表。"""
+    """在一份文件内部检索最相关的块。文件没索引过时返回空列表。
+
+    拼进 prompt 的顺序：页码前缀 + 正文 + 图片描述。
+        page 是字段而不是文本内容（文本里已经没有「第 N 页」了），
+        所以这里补回成「（第 3 页）」，模型才能说「在你文档第 3 页」。
+        image_text 同理：不参与向量，但属于同一块的上下文。
+    """
 
     def _work() -> list[str]:
         client = _get_client()
@@ -141,13 +166,24 @@ async def search_chunks(file_url: str, vector: list[float], top_k: int) -> list[
             data=[vector],
             limit=top_k,
             filter=f'file_url == "{_escape(file_url)}"',
-            output_fields=["text", "chunk_index"],
+            output_fields=["text", "chunk_index", "page", "kind", "image_text"],
         )
         if not hits:
             return []
         # 按块序还原，让拼进 prompt 的段落顺序和原文一致
         ordered = sorted(hits[0], key=lambda h: h["entity"]["chunk_index"])
-        return [h["entity"]["text"] for h in ordered]
+        out: list[str] = []
+        for hit in ordered:
+            entity = hit["entity"]
+            text = str(entity.get("text") or "")
+            page = int(entity.get("page") or 0)
+            if page:
+                text = f"（第 {page} 页）{text}"
+            image_text = str(entity.get("image_text") or "").strip()
+            if image_text:
+                text = f"{text}\n【该块包含的图片】{image_text}"
+            out.append(text)
+        return out
 
     return await asyncio.to_thread(_work)
 

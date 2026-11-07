@@ -21,7 +21,6 @@ from typing import Annotated
 from fastapi import APIRouter, File, Request, UploadFile
 
 from app.common.security import require_user_id
-from app.config import get_settings
 from app.llm.mineru import MineruError
 from app.memory.quota import check_upload_quota, consume_upload
 from app.rag.doc_ingest import index_document, is_document
@@ -47,16 +46,19 @@ def _parse_semaphore() -> asyncio.Semaphore:
     return _parse_sem
 
 
-async def _parse_document(url: str, filename: str, content_type: str) -> dict:
-    """解析并索引，任何失败都降级成状态字段，绝不让上传失败。"""
-    if not get_settings().mineru_configured:
-        return {"status": "skipped", "reason": "未配置文档解析"}
+async def _parse_document(url: str, filename: str, content_type: str, data: bytes) -> dict:
+    """解析并索引，任何失败都降级成状态字段，绝不让上传失败。
+
+    注意这里**不再先检查 MinerU 有没有配**：文本型 PDF 和 txt/md 根本不需要
+    MinerU（直抽文本层只要 0.01 秒），先检查会把它们一起挡掉。
+    真正需要 OCR 时由 index_document 内部抛 MineruError，落到下面的 failed 分支。
+    """
     if not is_document(content_type, filename):
         return {"status": "skipped", "reason": "不是文档类型，走图片识别"}
 
     try:
         async with _parse_semaphore():
-            info = await index_document(url, filename)
+            info = await index_document(url, filename, data=data, content_type=content_type)
     except MineruError as exc:
         # 这类异常是我们自己包装过的，message 可以直接给用户看
         logger.warning("文档解析失败：%s（%s）", filename, exc)
@@ -96,5 +98,5 @@ async def upload(
     # OSS 写成功之后才扣额度：上传失败不该消耗用户当天的次数
     await consume_upload(user_key)
 
-    parsed = await _parse_document(result["url"], filename, content_type)
+    parsed = await _parse_document(result["url"], filename, content_type, data)
     return {"data": {**result, "parsed": parsed}}
