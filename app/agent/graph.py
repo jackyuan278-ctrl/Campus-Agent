@@ -58,6 +58,7 @@ from app.common.constants import (
     DOC_TOP_K,
     MAX_IMAGES,
     MAX_TOOL_ROUNDS,
+    MAX_TURN_TOKENS,
 )
 from app.llm.gateway import get_chat_model
 from app.llm.vision import describe_image
@@ -309,11 +310,21 @@ def _handle_tool_error(exc: Exception) -> str:
 
     注意不能直接把原始异常文本回给模型：里面可能带 SQL 片段、连接串。
     完整异常只进日志。
+
+    话术要给"人话"：这条消息是给模型看的，但模型会转述给用户，
+    所以写「工具调用失败（内部错误）」就等于让用户看到内部错误。
     """
     # 这里是 ToolNode 在 except 块之外调用的，exc_info=True 取不到原始堆栈，
     # 必须显式把异常对象传进去，日志里才有完整 traceback。
     logger.warning("工具执行失败，已降级为错误消息：%s", exc, exc_info=exc)
-    return "工具调用失败（内部错误），请告知用户稍后重试，不要编造数据。"
+
+    name = type(exc).__name__.lower()
+    reason = "查询超时" if ("timeout" in name or "timeout" in str(exc).lower()) else "查询服务暂时不可用"
+    return (
+        f"（{reason}，这次没有取到数据）"
+        "请用一句口语化的话告诉用户：这次查询没成功，稍等一下再试；"
+        "不要编造任何数据，也不要提到错误码、异常或内部实现。"
+    )
 
 
 def _localize_summary(patch: dict[str, Any]) -> None:
@@ -664,12 +675,22 @@ def build_graph(checkpointer=None):
         return {}
 
     def should_use_tools(state: AgentState) -> str:
-        """有 tool_calls 且还有轮数就执行工具，否则收尾。"""
+        """有 tool_calls 且还有轮数和 token 预算就执行工具，否则收尾。"""
         last = (state.get("messages") or [None])[-1]
         calls = getattr(last, "tool_calls", None) or []
-        if calls and state.get("tool_rounds", 0) < MAX_TOOL_ROUNDS:
-            return "tools"
-        return "persist"
+        if not calls:
+            return "persist"
+        if state.get("tool_rounds", 0) >= MAX_TOOL_ROUNDS:
+            return "persist"
+        if state.get("turn_tokens", 0) >= MAX_TURN_TOKENS:
+            # 单轮 token 用超了：日配额管得住总量，管不住一轮烧穿。
+            # 这时候继续给工具只会越滚越大，让它用已有信息收尾。
+            logger.warning(
+                "单轮 token 已达 %d（上限 %d），停止工具调用",
+                state.get("turn_tokens", 0), MAX_TURN_TOKENS,
+            )
+            return "persist"
+        return "tools"
 
     graph = StateGraph(AgentState)
     graph.add_node("summarize", summarize)

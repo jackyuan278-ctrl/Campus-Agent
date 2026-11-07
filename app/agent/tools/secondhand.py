@@ -94,7 +94,8 @@ async def search_secondhand_items(
     order = SORT_MAP.get(sort_by, SORT_MAP["price_asc"])
 
     sql = (
-        "SELECT id, name, price, category_id, condition_desc, image, status, create_time "
+        # 不选 image（URL 对模型没用，白占 token）和 status（永远是在售，零信息量）
+        "SELECT id, name, price, category_id, condition_desc, create_time "
         "FROM tb_item "
         f"WHERE {' AND '.join(where_parts)} "
         f"ORDER BY {order} "
@@ -115,9 +116,8 @@ async def get_secondhand_detail(item_id: int) -> dict[str, Any] | None:
     engine: AsyncEngine = get_secondhand_engine()
     sql = text(
         """
-        SELECT id, seller_id, name, price, image, category_id,
-               condition_desc, description, trade_location, status,
-               create_time, update_time
+        SELECT id, name, price, category_id, condition_desc, description,
+               trade_location, create_time
         FROM tb_item
         WHERE id = :item_id
         """
@@ -138,21 +138,34 @@ async def get_secondhand_detail(item_id: int) -> dict[str, Any] | None:
 async def search_secondhand_items_tool(
     keyword: str | None = None,
     max_price: float | None = None,
+    min_price: float | None = None,
+    condition: str | None = None,
     category_id: int | None = None,
+    sort_by: str = "price_asc",
     page_size: int = 5,
 ) -> list[dict[str, Any]]:
-    """搜索校园在售二手商品。按关键词模糊匹配名称，可按价格上限和分类过滤。"""
+    """搜索校园在售二手商品。
+
+    - keyword：按名称模糊匹配（如「自行车」「高数」）
+    - min_price / max_price：价格区间，用户说「200 以内」就填 max_price=200
+    - condition：成色，用户说「九成新」就填 condition="9成新"（模糊匹配）
+    - sort_by：price_asc / price_desc / time_desc
+    用户问「最便宜的」「最新发布的」时，分别用 price_asc / time_desc。
+    """
     return await search_secondhand_items(
         keyword=keyword,
         max_price=max_price,
+        min_price=min_price,
+        condition=condition,
         category_id=category_id,
+        sort_by=sort_by,
         page_size=page_size,
     )
 
 
 @tool
 async def get_secondhand_detail_tool(item_id: int) -> dict[str, Any] | None:
-    """按商品 ID 查询二手商品详情（含描述、交易地点、卖家）。"""
+    """按商品 ID 查询二手商品详情（含描述、交易地点）。"""
     return await get_secondhand_detail(item_id)
 
 

@@ -27,8 +27,19 @@ logger = logging.getLogger(__name__)
 COLLECTION = "doc_chunks"
 
 _client: MilvusClient | None = None
-# Milvus Lite 是单文件库，写入串行化，避免两条上传同时改同一个文件
-_write_lock = asyncio.Lock()
+# Milvus Lite 是单文件库，写入串行化，避免两条上传同时改同一个文件。
+# 按 loop 惰性创建：模块级 asyncio.Lock 换 loop 会永久挂起（同 graph/vision 的教训）。
+_write_lock: asyncio.Lock | None = None
+_write_lock_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _write_guard() -> asyncio.Lock:
+    global _write_lock, _write_lock_loop
+    loop = asyncio.get_running_loop()
+    if _write_lock is None or _write_lock_loop is not loop:
+        _write_lock = asyncio.Lock()
+        _write_lock_loop = loop
+    return _write_lock
 
 
 def _get_client() -> MilvusClient:
@@ -141,7 +152,7 @@ async def upsert_chunks(
         client.flush(COLLECTION)
         return len(rows)
 
-    async with _write_lock:
+    async with _write_guard():
         count = await asyncio.to_thread(_work)
     logger.info("附件入索引：%s（%d 块）", file_name, count)
     return count
@@ -196,7 +207,7 @@ async def delete_file(file_url: str) -> None:
         if client.has_collection(COLLECTION):
             client.delete(COLLECTION, filter=f'file_url == "{_escape(file_url)}"')
 
-    async with _write_lock:
+    async with _write_guard():
         await asyncio.to_thread(_work)
 
 

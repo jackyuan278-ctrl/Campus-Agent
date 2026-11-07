@@ -11,6 +11,7 @@
 """
 import asyncio
 import logging
+import time
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -19,6 +20,10 @@ from langgraph.checkpoint.mysql.aio import AIOMySQLSaver
 from app.agent.graph import build_graph
 
 logger = logging.getLogger(__name__)
+
+# 探活结果缓存时长。每个请求都 ping 一次 MySQL 是白白多一个往返，
+# 而掉线最坏晚 5 秒被发现——期间失败的请求会走 recover() 重建，代价可接受。
+_PING_TTL = 5.0
 
 
 class AgentRuntime:
@@ -31,6 +36,7 @@ class AgentRuntime:
         self._graph: Any = None
         self._lock = asyncio.Lock()
         self._schema_ready = False  # setup() 只需跑一次，重建时跳过
+        self._healthy_until = 0.0   # 探活结果的缓存截止时间（monotonic）
 
     # ---------- 对外只读访问 ----------
 
@@ -82,12 +88,17 @@ class AgentRuntime:
     async def _is_healthy(self) -> bool:
         if self._saver is None:
             return False
+        now = time.monotonic()
+        if now < self._healthy_until:
+            return True          # 5 秒内刚探过，不再打一次 MySQL
         try:
             # reconnect=False：只探测，不偷偷换连接（换连接会绕过我们的重建逻辑）
             await self._saver.conn.ping(reconnect=False)
+            self._healthy_until = now + _PING_TTL
             return True
         except Exception as exc:  # noqa: BLE001 —— 探活失败的原因不重要，一律视为不健康
             logger.warning("checkpointer ping 失败：%s", exc)
+            self._healthy_until = 0.0
             return False
 
     async def _rebuild(self) -> None:
@@ -113,6 +124,7 @@ class AgentRuntime:
         stack, self._stack = self._stack, None
         self._saver = None
         self._graph = None
+        self._healthy_until = 0.0
         if stack is not None:
             try:
                 await stack.aclose()

@@ -32,13 +32,26 @@ _QUEUE_LOG_THRESHOLD = 0.05
 _locks: dict[str, asyncio.Lock] = {}
 # 引用计数：会话结束后把锁丢掉，否则长跑服务的 _locks 会随会话数无限增长
 _refs: dict[str, int] = {}
-_guard = asyncio.Lock()
+# 保护上面两个 dict 的锁。**必须按 loop 惰性创建**：模块级的 asyncio.Lock 绑定
+# 首次使用它的事件循环，换一个 loop（pytest 每个用例一个 loop、进程重启、
+# 某些框架的 fork）再申请会永久挂起且不报错。
+_guard: asyncio.Lock | None = None
+_guard_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_guard() -> asyncio.Lock:
+    global _guard, _guard_loop
+    loop = asyncio.get_running_loop()
+    if _guard is None or _guard_loop is not loop:
+        _guard = asyncio.Lock()
+        _guard_loop = loop
+    return _guard
 
 
 @asynccontextmanager
 async def thread_lock(thread_id: str) -> AsyncIterator[None]:
     """持有某个会话的独占锁；同一会话的其它请求在此排队。"""
-    async with _guard:
+    async with _get_guard():
         lock = _locks.get(thread_id)
         if lock is None:
             lock = asyncio.Lock()
@@ -55,7 +68,7 @@ async def thread_lock(thread_id: str) -> AsyncIterator[None]:
                 logger.info("会话 %s 排队 %.0f ms 后才开始处理", thread_id, waited * 1000)
             yield
     finally:
-        async with _guard:
+        async with _get_guard():
             _refs[thread_id] -= 1
             if _refs[thread_id] <= 0:
                 _locks.pop(thread_id, None)

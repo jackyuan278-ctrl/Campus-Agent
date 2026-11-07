@@ -82,9 +82,6 @@ class Settings:
         self.embedding_model: str = _env("TENCENT_TOKENHUB_MODEL_NAME")
         self.embedding_base_url: str = _env("TENCENT_TOKENHUB_BASE_URL")
 
-        # ===== 向量库（Milvus） =====
-        self.milvus_uri: str = _env("MILVUS_URI")
-
         # ===== Milvus Lite：进程内向量库，存附件切块 =====
         # 不填就用项目内的数据文件。它是个本地文件，不需要任何服务端，
         # 所以附件检索不依赖「那台虚拟机起没起」。
@@ -175,10 +172,6 @@ class Settings:
             and self.oss_bucket
             and self.oss_endpoint
         )
-
-    @property
-    def milvus_configured(self) -> bool:
-        return bool(self.milvus_uri)
 
     @property
     def mineru_configured(self) -> bool:

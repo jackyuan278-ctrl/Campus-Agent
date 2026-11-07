@@ -21,12 +21,12 @@ from app.rag.retriever import retrieve
 logger = logging.getLogger(__name__)
 
 
-def _time_filter(time_range: str, now: datetime):
-    """构造候选谓词：活动没结束 + （可选）开始时间落在窗口内。
+def _time_filter(time_range: str, now: datetime, location: str | None = None):
+    """构造候选谓词：活动没结束 + （可选）开始时间落在窗口内 + （可选）地点匹配。
 
     两条规则的优先级不同：
         「已结束」是硬过滤，任何档位都生效——推荐一个办完的活动只会让用户觉得答错；
-        「时间窗」只在模型显式填了档位时生效。
+        「时间窗 / 地点」只在模型显式填了参数时生效。
     """
 
     def _where(doc: dict[str, Any]) -> bool:
@@ -38,6 +38,12 @@ def _time_filter(time_range: str, now: datetime):
         end_time = clock.parse_dt(doc.get("end_time"))
         if end_time is not None and end_time < now:
             return False
+
+        if location:
+            # 地点没有独立字段，只在 extra 里（"地点：图书馆一楼展厅｜开始时间：…"）。
+            # 用包含匹配而不是相等：用户说「图书馆」，库里存的是「图书馆一楼展厅」。
+            if location not in str(doc.get("extra") or ""):
+                return False
 
         start, end = clock.range_of(time_range, now)
         if start is None and end is None:
@@ -53,13 +59,33 @@ def _time_filter(time_range: str, now: datetime):
     return _where
 
 
+# 摘要截断长度。`text` 是给向量用的拼接串，`content` 最多 500 字；
+# 全给模型 5 条就 3000 字，其中一半信息在 prompt 里从没被用到。
+_SUMMARY_CHARS = 200
+
+
+def _trim(doc: dict[str, Any]) -> dict[str, Any]:
+    """只回模型真正要用的字段（去掉 text / fingerprint / content 全文）。"""
+    return {
+        "source": doc.get("source"),
+        "id": doc.get("id"),
+        "title": doc.get("title"),
+        "summary": str(doc.get("content") or "")[:_SUMMARY_CHARS],
+        "extra": doc.get("extra"),              # 地点 + 开始时间（人可读）
+        "start_time": doc.get("start_time"),
+        "signup_end_time": doc.get("signup_end_time"),
+        "score": doc.get("score"),
+    }
+
+
 @tool
 async def search_campus_activities(
     query: str,
     time_range: str = "all",
+    location: str = "",
     top_k: int = 5,
 ) -> list[dict[str, Any]]:
-    """检索校园活动与社区帖子（向量检索）。
+    """检索校园活动与社区帖子（稠密向量 + 关键词两路召回后融合）。
 
     用户问「有什么活动」「讲座」「比赛」「社团招新」「帖子讨论」时使用。
 
@@ -68,6 +94,8 @@ async def search_campus_activities(
       today 今天
       week  本周剩余——用户说「这周」「最近」「周末」「这几天」时填这个
       month 未来一个月——用户说「这个月」「接下来」时填这个
+
+    location 可选：用户提到地点时填（如「图书馆」「体育馆」），不填就是不限。
 
     已结束的活动不会返回。返回空列表代表确实没有，照实说即可，不要编造。
     """
@@ -78,12 +106,16 @@ async def search_campus_activities(
         time_range = "all"
 
     now = clock.now_cn()
-    results = await retrieve(query, top_k=top_k, where=_time_filter(time_range, now))
-    logger.info(
-        "活动检索：time_range=%s 命中 %d 条（now=%s）",
-        time_range, len(results), clock.describe_now(now),
+    hits = await retrieve(
+        query,
+        top_k=top_k,
+        where=_time_filter(time_range, now, location.strip() or None),
     )
-    return results
+    logger.info(
+        "活动检索：time_range=%s location=%s 命中 %d 条（now=%s）",
+        time_range, location or "-", len(hits), clock.describe_now(now),
+    )
+    return [_trim(doc) for doc in hits]
 
 
 CAMPUS_SEARCH_TOOLS = [search_campus_activities]
