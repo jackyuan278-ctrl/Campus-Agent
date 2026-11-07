@@ -5,6 +5,7 @@
 mtime：变了就重新读盘。stat 是微秒级开销，比「改完必须重启服务」划算。
 """
 import logging
+from collections.abc import Callable
 
 from app.rag.embedding import embed_query
 from app.rag.index import INDEX_DIR, VECTORS_FILE, VectorIndex
@@ -44,11 +45,20 @@ def reload_index() -> None:
     logger.info("索引缓存已失效，下次检索重新加载")
 
 
-async def retrieve(query: str, top_k: int = 5, min_score: float = 0.0) -> list[dict]:
+async def retrieve(
+    query: str,
+    top_k: int = 5,
+    min_score: float = 0.0,
+    where: Callable[[dict], bool] | None = None,
+) -> list[dict]:
     """检索 top_k 条最相关文档。
 
     Args:
         min_score: 相似度下限，默认 0（不过滤）。等看过真实分数分布再调。
+        where: 候选过滤谓词（结构化条件，如「活动没结束」「本周内」）。
+            **在排序截断之前生效**，这一点很关键：先取 top 15 再过滤的话，
+            「这周有什么活动」很可能一条不剩——不是真的没有，是名额被别的活动占满了。
+            给了谓词就退化成对全量打分（579 条，一次矩阵乘），代价可以忽略。
     """
     index = get_index()
     if index is None or not index.docs:
@@ -56,13 +66,18 @@ async def retrieve(query: str, top_k: int = 5, min_score: float = 0.0) -> list[d
         return []
 
     vector = await embed_query(query)
-    hits = index.search(vector, top_k=top_k * 3)  # 多取一些，去重后再截断
+    # 有谓词：全量打分后过滤，避免"过滤完没货"；无谓词：老路径，多取一些去重后截断
+    limit = len(index.docs) if where is not None else top_k * 3
+    hits = index.search(vector, top_k=limit)
 
     results: list[dict] = []
     seen: set[str] = set()
     for doc, score in hits:
-        # 种子数据里同名文档会出现多条，按「来源+标题」去重，避免 prompt 里全是重复内容
-        key = f"{doc.get('source')}:{doc.get('title')}"
+        if where is not None and not where(doc):
+            continue
+        # 用 id 而不是 title：标题可能撞车（造数数据里大量重复标题），
+        # 按 title 去重会把不同的活动当成同一条吃掉
+        key = f"{doc.get('source')}:{doc.get('id')}"
         if key in seen:
             continue
         seen.add(key)
@@ -77,4 +92,6 @@ async def retrieve(query: str, top_k: int = 5, min_score: float = 0.0) -> list[d
             "检索命中 %d 条，最高分 %.4f（%s）",
             len(results), results[0]["score"], results[0].get("title", "")[:20],
         )
+    elif where is not None:
+        logger.info("检索有谓词但零命中（候选 %d 条全部被过滤）", len(index.docs))
     return results

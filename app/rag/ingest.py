@@ -39,9 +39,14 @@ def fingerprint(text: str) -> str:
 
 # 拼 text 的逻辑必须只有一份：全量 ingest 和单条增量（indexer）如果各拼各的，
 # 同一条记录会算出不同的向量，索引里就会出现「内容一样但向量不同」的鬼影。
+#
+# 收录口径：status=1 只代表「已发布」（报名中 / 未开始 / 报名已截止），活动真正
+# 开始后定时任务会把它翻成 status=2「进行中」。只收 1 的话，用户在活动页看着一个
+# 正在进行中的活动，问助手却答「没找到」——展示层和知识库口径就分叉了。
+# 已结束（3）、已取消（4）仍排除：推荐一个已经办完的活动没有意义。
 _ACTIVITY_SQL = (
-    "SELECT id, title, description, location, start_time "
-    "FROM tb_activity WHERE status = 1"
+    "SELECT id, title, description, location, start_time, end_time, signup_end_time "
+    "FROM tb_activity WHERE status IN (1, 2)"
 )
 _QUESTION_SQL = (
     "SELECT id, title, content, answer_count, create_time "
@@ -49,8 +54,26 @@ _QUESTION_SQL = (
 )
 
 
+def _iso(value: Any) -> str:
+    """datetime → 'YYYY-MM-DD HH:MM:SS'（不带时区，语义是北京时间）。
+
+    `str(datetime)` 在带微秒时会给 '...:00.000000'，fromisoformat 两种都能解析，
+    但统一成 isoformat 让人读索引文件时不用猜。
+    """
+    return value.isoformat(sep=" ") if hasattr(value, "isoformat") else str(value or "")
+
+
 def activity_doc(row: Any) -> dict:
-    """一行活动 → 可向量化文档。"""
+    """一行活动 → 可向量化文档。
+
+    时间字段**单独存三个**，不拼进 `text`：
+        start_time / end_time / signup_end_time 是「过滤和排序」用的结构化数据，
+        由检索时的谓词直接比较，不需要模型去读、也不需要向量去理解。
+        拼进 text 会让 fingerprint 变化 → 356 条活动全部重算向量（一次白花钱），
+        而且时间对语义相似度没有贡献。
+
+    `text` 保持原样是刻意的：它是「被向量化的内容」，指纹也就该只盯着它。
+    """
     description = (row["description"] or "")[:500]
     return {
         "source": "activity",
@@ -58,6 +81,10 @@ def activity_doc(row: Any) -> dict:
         "title": row["title"] or "",
         "content": description,
         "extra": f"地点：{row['location'] or '未填写'}｜开始时间：{row['start_time']}",
+        # ↓ 结构化时间：检索时按区间过滤、按新鲜度排序，都读这三个字段
+        "start_time": _iso(row["start_time"]),
+        "end_time": _iso(row["end_time"]),
+        "signup_end_time": _iso(row["signup_end_time"]),
         "text": f"活动：{row['title']}。地点：{row['location'] or ''}。{description}",
     }
 
@@ -76,7 +103,7 @@ def question_doc(row: Any) -> dict:
 
 
 async def load_activity(activity_id: int) -> dict | None:
-    """按 id 读一条活动。下架/已结束（status≠1）返回 None —— 调用方据此删向量。"""
+    """按 id 读一条活动。已结束（3）/已取消（4）/不存在返回 None —— 调用方据此删向量。"""
     engine = get_activity_engine()
     async with engine.connect() as conn:
         result = await conn.execute(
@@ -98,7 +125,7 @@ async def load_question(question_id: int) -> dict | None:
 
 
 async def _load_activities(limit: int) -> list[dict]:
-    """取活动（只取在架的 status=1）。"""
+    """取活动（status=1 已发布 + status=2 进行中，口径与 _ACTIVITY_SQL 一致）。"""
     sql = _ACTIVITY_SQL + " ORDER BY id DESC"
     if limit > 0:
         sql += " LIMIT :limit"

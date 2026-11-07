@@ -1,0 +1,45 @@
+# campus-agent 部署编排
+#
+# 起的只是一个 FastAPI 进程 + 本地文件卷，不依赖 MySQL/Redis/Milvus 容器：
+#   - MySQL 用现成的 campus-hub 那套（填 .env 的 MYSQL_HOST 即可）
+#   - 附件向量库是 Milvus Lite，进程内跑，落在挂载卷里
+#
+# 首次部署顺序（索引是必需文件，不建就是空检索）：
+#   cp .env.example .env && 编辑 .env
+#   docker compose build
+#   docker compose run --rm agent python -m app.rag.ingest --limit 0
+#   docker compose up -d
+#
+# volumes 里的 ./data 同时放着 numpy 索引（vectors.npy / docs.json）和
+# Milvus Lite 的 milvus.db —— 不挂卷的话容器一重建，附件索引全部丢失。
+
+services:
+  agent:
+    build: .
+    image: campus-agent:latest
+    container_name: campus-agent
+    env_file:
+      - .env
+    environment:
+      # 容器默认走 UTC（实测 date 显示 09:11 而宿主机是 17:11）。
+      # 正确性由代码里的 app.common.clock 保证；这个变量只让日志和文件时间戳
+      # 也对齐北京时间——排查跨天问题时，日志时间差 8 小时会直接把人带偏。
+      # 需要镜像里装了 tzdata，见 Dockerfile。
+      - TZ=Asia/Shanghai
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      # slim 镜像里没有 curl，用 python 自带的标准库探活
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

@@ -49,6 +49,7 @@ from app.agent.state import INTENT_CASUAL, AgentState, infer_intent
 from app.agent.tools.activity import CAMPUS_SEARCH_TOOLS
 from app.agent.tools.secondhand import SECONDHAND_TOOLS
 from app.agent.tools.web import WEB_TOOLS
+from app.common import clock
 from app.common.constants import (
     CHAT_SUMMARY_KEEP,
     CHAT_SUMMARY_TRIGGER,
@@ -196,6 +197,24 @@ _MODE_PROMPTS: dict[str, str] = {
 def prompt_for_mode(mode: str | None) -> str:
     """档位 → system prompt。未知档位退回「智能问答」，不报错也不拦。"""
     return _MODE_PROMPTS.get(mode or "", CHAT_SYSTEM_PROMPT)
+
+
+def time_context() -> str:
+    """每轮现算的时间上下文，拼在 system prompt 末尾。
+
+    模型不知道今天几号（训练截止在前），而「今天」「这周」「最近」几乎是每个活动问题
+    都会带的前提。这类**确定值**用注入，不用工具：
+      - 让模型"去查时间"要多一次模型往返（1~3s），而它本来就是一个已知常量；
+      - 查不查是概率的（可能忘了查、查了不用、用错时区），注入是幂等的。
+    这跟 tools_for_mode 是同一条原则：确定性的东西不交给概率性的判断。
+
+    时间必须来自 app.common.clock（显式 +08:00）。容器时区是 UTC，
+    直接 datetime.now() 会让 CST 00:00~08:00 这八小时里的「今天」整体错一天。
+    """
+    return (
+        f"\n\n当前时间：{clock.describe_now()}（北京时间）。"
+        "用户说「今天」「明天」「这周」「最近」时，一律以这个时间为准，不要自己推算日期。"
+    )
 
 
 # 全局并发闸门：GLM 有 QPS 限制，超了直接返回 429，用户看到的是「模型服务不可用」。
@@ -460,7 +479,7 @@ def build_graph(checkpointer=None):
         # agent 自己负责截断）。
         runnable = model.bind_tools(tools) if tools else model
 
-        system_prompt = prompt_for_mode(state.get("mode"))
+        system_prompt = prompt_for_mode(state.get("mode")) + time_context()
         messages = [SystemMessage(content=system_prompt), *(state.get("messages") or [])]
 
         async with _model_semaphore():
