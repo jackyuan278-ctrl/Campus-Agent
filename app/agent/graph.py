@@ -390,6 +390,44 @@ def _tokens_of(resp: AIMessage, prompt_messages: list) -> int:
         return 0
 
 
+def _with_attachments(
+    history: list,
+    attachment_text: str | None,
+    thread_id: str | None = None,
+) -> list:
+    """把附件正文临时拼到「本轮那条用户消息」上，返回新列表，**不改 state**。
+
+    为什么不直接把附件正文写进 HumanMessage：
+        它会随 checkpointer 永久留在历史里，之后每一轮都重发（4 块约 1000 token），
+        摘要也会把这些段落反复咀嚼。拼在内存副本里，只进这一次的 prompt。
+
+    为什么要找最后一个 HumanMessage：
+        route 每轮在末尾追加一条用户消息，之后只有 AI / Tool 消息，
+        所以从末尾往前第一个 HumanMessage 就是本轮的。
+        一次工具调用会调两到三次模型，每次都要重新拼（副本用完即弃）。
+    """
+    if not attachment_text or not history:
+        return list(history)
+
+    index = None
+    for i in range(len(history) - 1, -1, -1):
+        if isinstance(history[i], HumanMessage):
+            index = i
+            break
+    if index is None:
+        return list(history)
+
+    # 拼之前扫一眼有没有注入指令（只记日志，不改内容，理由见 _scan_untrusted）
+    _scan_untrusted(attachment_text, "附件", thread_id)
+    merged = HumanMessage(
+        content=(
+            f"{history[index].content}\n\n【附件内容】\n"
+            f"<retrieved>\n{attachment_text}\n</retrieved>"
+        )
+    )
+    return [*history[:index], merged, *history[index + 1:]]
+
+
 def build_graph(checkpointer=None):
     """构建并编译状态图。
 
@@ -456,6 +494,23 @@ def build_graph(checkpointer=None):
                 unsupported.append(item)
 
         blocks: list[str] = []
+        update: dict[str, Any] = {}
+
+        # 本轮带了文档 → 记住地址，供之后几轮追问重新检索（一份文档几十字节）
+        if documents:
+            update["doc_urls"] = [
+                {"name": str(d.get("name") or "文档"), "url": str(d.get("url"))}
+                for d in documents
+            ]
+        elif not attachments and state.get("mode") == "doc":
+            # 本轮没带附件，但会话里之前传过文档 → 用这次的问题重新检索一遍。
+            # 为什么需要这一步：附件正文不再写进对话历史（见 route 里的说明），
+            # 所以「追问」必须靠这里补上下文，否则用户问「第 2 章讲了什么」会失忆。
+            # 代价只有 1 次 query embedding，比每轮重发 1000 token 便宜得多。
+            stored = state.get("doc_urls") or []
+            if stored:
+                documents = stored
+                logger.info("doc 档追问：复用会话内 %d 份文档重新检索", len(stored))
 
         # 文档：按这次提问做向量检索，只带回最相关的几块（不是全文）
         if documents:
@@ -472,7 +527,9 @@ def build_graph(checkpointer=None):
                 )
 
         if not images:
-            return {"attachment_text": "\n".join(blocks), "vision_tokens": 0}
+            update["attachment_text"] = "\n".join(blocks)
+            update["vision_tokens"] = 0
+            return update
 
         # 超出上限的图片明确说明，而不是静默丢掉
         overflow = images[MAX_IMAGES:]
@@ -498,7 +555,9 @@ def build_graph(checkpointer=None):
                 blocks.append(f"- {name}：没有识别到可用内容")
             else:
                 blocks.append(f"- {name}：\n{text}")
-        return {"attachment_text": "\n".join(blocks), "vision_tokens": vision_tokens}
+        update["attachment_text"] = "\n".join(blocks)
+        update["vision_tokens"] = vision_tokens
+        return update
 
     async def route(state: AgentState) -> dict[str, Any]:
         """写本轮用户消息 + 记录意图。
@@ -513,16 +572,9 @@ def build_graph(checkpointer=None):
         intent = INTENT_CASUAL if mode == INTENT_CASUAL else infer_intent(state.get("query", ""))
 
         content = state.get("query") or "请看看我发的附件"
-        attachment_text = state.get("attachment_text")
-        if attachment_text:
-            # 用 <retrieved> 包起来：配合 system prompt 里的安全约束，
-            # 让模型能分清「这是检索到的资料」和「这是系统/用户的指令」。
-            # 没有这层边界时，文档正文里的祈使句和用户指令在模型眼里是同一种东西。
-            _scan_untrusted(attachment_text, "附件", state.get("thread_id"))
-            content = (
-                f"{content}\n\n【附件内容】\n"
-                f"<retrieved>\n{attachment_text}\n</retrieved>"
-            )
+        # 附件正文**不**拼进 HumanMessage。拼进去它会随 checkpointer 永久留在历史里，
+        # 之后每一轮都重发（4 块 ≈1000 token），摘要也会把这些段落反复咀嚼一遍。
+        # 改为在 agent 节点临时拼到消息副本上（见 _with_attachments），只进当轮 prompt。
 
         logger.info(
             "route：thread=%s mode=%s intent=%s 附件=%d",
@@ -553,7 +605,10 @@ def build_graph(checkpointer=None):
             _scan_untrusted(str(history[-1].content), "工具结果", state.get("thread_id"))
 
         system_prompt = prompt_for_mode(state.get("mode")) + time_context()
-        messages = [SystemMessage(content=system_prompt), *(state.get("messages") or [])]
+        messages = [
+            SystemMessage(content=system_prompt),
+            *_with_attachments(history, state.get("attachment_text"), state.get("thread_id")),
+        ]
 
         async with _model_semaphore():
             resp: AIMessage = await runnable.ainvoke(messages)

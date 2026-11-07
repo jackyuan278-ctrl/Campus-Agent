@@ -45,6 +45,7 @@ class AgentState(TypedDict, total=False):
     user_key: str       # 配额统计标识：user:<userId> 或 anon:<threadId>
     turn_tokens: int    # 本轮累计 token（含工具轮），persist 时写入用量表
     attachments: list[dict[str, Any]]  # 附件元信息（含 OSS url）
+    doc_urls: list[dict[str, Any]]     # 本会话传过的文档地址（name+url），供后续追问重新检索
     attachment_text: str  # 图片经视觉模型转成的文字（拼进本轮提问）
     vision_tokens: int    # 识图花掉的 token（并入本轮配额）
     answer: str         # 本轮最终回复
