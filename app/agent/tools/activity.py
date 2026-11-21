@@ -119,3 +119,16 @@ async def search_campus_activities(
 
 
 CAMPUS_SEARCH_TOOLS = [search_campus_activities]
+
+
+def register(r: "SkillRegistry") -> None:
+    """注册校园检索工具（活动 + 社区帖子）。
+
+    服务 market、activity、doc、chat 四个档位，casual 档不给。
+    """
+    from app.agent.skills import SkillRegistry
+
+    r.register_tools("market", CAMPUS_SEARCH_TOOLS)
+    r.register_tools("activity", CAMPUS_SEARCH_TOOLS)
+    r.register_tools("doc", CAMPUS_SEARCH_TOOLS)
+    r.register_tools("chat", CAMPUS_SEARCH_TOOLS)

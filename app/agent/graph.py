@@ -47,10 +47,8 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from app.agent.skills import registry
 from app.agent.state import INTENT_CASUAL, AgentState, infer_intent
-from app.agent.tools.activity import CAMPUS_SEARCH_TOOLS
-from app.agent.tools.secondhand import SECONDHAND_TOOLS
-from app.agent.tools.web import WEB_TOOLS
 from app.common import clock
 from app.common.constants import (
     CHAT_SUMMARY_KEEP,
@@ -195,28 +193,20 @@ SUMMARY_PROMPT = """把下面这段校园助手与用户的对话压缩成一段
 {messages}
 </messages>"""
 
-# 工具集是**静态装配**：只跟「这次会话允许哪些能力」有关，跟用户这句话说了
-# 什么无关。装配在每轮开始前完成，同一档位下第 1 轮和第 N 轮拿到的清单完全一样。
-#
-# 旧版按意图裁剪（_TOOLSETS）的教训：判错时工具会直接消失，模型连补救入口都
-# 没有，只能拿历史复述——「最便宜的是哪个」被答成「那 5 条里最便宜的」就是
-# 这么来的。参考 Codex 的 build_tool_router：它的入参里根本没有用户消息，
-# 裁剪维度全是模型能力 / 权限 / 预算。
-_LOCAL_TOOLS: list[BaseTool] = SECONDHAND_TOOLS + CAMPUS_SEARCH_TOOLS
-# ToolNode 执行时按工具名反查，所以必须收全量，不能用 tools_for_mode 的结果
-_ALL_TOOLS: list[BaseTool] = _LOCAL_TOOLS + WEB_TOOLS
-
-
 def tools_for_mode(mode: str | None) -> list[BaseTool]:
     """本轮给模型哪些工具（装配阶段定死，不随对话内容变）。
 
     联网（Tavily）是付费能力，只在用户显式选了「随便聊聊」时开放——这是
     能力开关，不是意图猜测。本地工具永远全给：三个工具的 description 已经
     写清了各自用途，让模型自己读、自己选，比代码猜意图可靠得多。
+
+    ⚠️ 工具集由各 tool 模块的 register() 函数声明，graph.py 不硬编码 mode→tools 映射。
+       加新功能只需 graph.py 底部多一行 xxx.register(registry)，内部代码不动。
     """
-    if mode == INTENT_CASUAL:
-        return WEB_TOOLS
-    return _LOCAL_TOOLS
+    # fallback 用 chat 档的工具集，因为它是未知档位的 prompt 兜底（CHAT_SYSTEM_PROMPT）。
+    # 如果 chat 档也没注册（防御性），给空列表让模型只靠自身知识回答。
+    fallback = registry.get_tools_for_mode("chat", fallback=[])
+    return registry.get_tools_for_mode(mode, fallback=fallback)
 
 
 # 档位 → system prompt。每档一份：视角、工具用法、回答风格都不同
@@ -697,7 +687,7 @@ def build_graph(checkpointer=None):
     graph.add_node("image_agent", image_agent)
     graph.add_node("route", route)
     graph.add_node("agent", agent)
-    graph.add_node("tools", ToolNode(_ALL_TOOLS, handle_tool_errors=_handle_tool_error))
+    graph.add_node("tools", ToolNode(registry.get_all_tools(), handle_tool_errors=_handle_tool_error))
     graph.add_node("strip_calls", strip_calls)
     graph.add_node("persist", persist)
 
@@ -715,3 +705,13 @@ def build_graph(checkpointer=None):
     graph.add_edge("persist", END)
 
     return graph.compile(checkpointer=checkpointer)
+
+
+# ===== Skill 注册 =====
+# 各 tool 模块声明自己服务哪些 mode。graph.py 不再硬编码 mode→tools 映射。
+# 加新功能只需这里多一行 xxx.register(registry)，内部代码不动。
+from app.agent.tools import secondhand, activity, web  # noqa: E402 - 放在末尾避免循环 import
+
+secondhand.register(registry)
+activity.register(registry)
+web.register(registry)

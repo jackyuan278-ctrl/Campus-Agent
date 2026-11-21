@@ -75,3 +75,10 @@ async def web_search_tool(query: str, max_results: int = 5) -> list[dict[str, An
 
 
 WEB_TOOLS = [web_search_tool]
+
+
+def register(r: "SkillRegistry") -> None:
+    """注册联网搜索工具。只给 casual（随便聊聊）档——校园问题用本地库，联网会引入噪音。"""
+    from app.agent.skills import SkillRegistry
+
+    r.register_tools("casual", WEB_TOOLS)
