@@ -193,6 +193,28 @@ SUMMARY_PROMPT = """把下面这段校园助手与用户的对话压缩成一段
 {messages}
 </messages>"""
 
+# 附件摘要提示词：给图片/短文档正文做 1-2 句压缩，进 history 供追问用。
+# 比对话摘要短得多——只保留"用户发了什么"，不保留对话上下文。
+_ATTACHMENT_SUMMARY_PROMPT = """下面是一张图片的文字识别结果或一段短文档正文。
+用 1-2 句话说清楚"这是什么"，保留关键内容，去掉冗余格式标记。
+直接输出摘要正文，不要加前缀。50 字以内。
+
+<content>
+{content}
+</content>"""
+
+# 附件摘要写入 history 时的前缀标记——agent 节点会跳过它当轮注入
+# （它已经是压缩版，不需要和原始正文拼在一起）。
+_ATTACHMENT_SUMMARY_PREFIX = "[附件摘要] "
+
+# 图片正文在 summarization 后保留的下限（字符数）。
+# 短于这个就跳过压缩直接写进 history——省一次模型调用，而且太短也压不瘦。
+_ATTACHMENT_SUMMARY_MIN_CHARS = 120
+
+# 压缩后写入 history 的上限（字符数）。摘要模型超了就截断。
+_ATTACHMENT_SUMMARY_MAX_CHARS = 120
+
+
 def tools_for_mode(mode: str | None) -> list[BaseTool]:
     """本轮给模型哪些工具（装配阶段定死，不随对话内容变）。
 
@@ -468,6 +490,27 @@ def build_graph(checkpointer=None):
         logger.info("上下文已压缩：%d 条 → 摘要 + 最近 %d 条", before, CHAT_SUMMARY_KEEP)
         return patch
 
+    async def _summarize_attachment(content: str) -> str | None:
+        """给附件正文做一次轻量压缩（1-2 句），结果进 history 供追问用。
+
+        短于阈值直接返回 None（跳过压缩）。失败也返回 None——不应因摘要失败中断对话。
+        复用 summarizer 的温度 0 模型，只给 300 token 预算（够 50 字摘要）。
+        """
+        if len(content.strip()) < _ATTACHMENT_SUMMARY_MIN_CHARS:
+            return None
+        try:
+            m = get_chat_model(temperature=0.0, max_tokens=300)
+            resp = await m.ainvoke(
+                [HumanMessage(content=_ATTACHMENT_SUMMARY_PROMPT.format(content=content[:4000]))]
+            )
+            text = (resp.content or "").strip()
+            if text:
+                # 截断过长的摘要（防御性）
+                return text[:_ATTACHMENT_SUMMARY_MAX_CHARS]
+        except Exception:
+            logger.exception("附件摘要失败（长度=%d），跳过", len(content))
+        return None
+
     async def image_agent(state: AgentState) -> dict[str, Any]:
         """附件处理节点：所有档位都会先经过这里。
 
@@ -544,6 +587,7 @@ def build_graph(checkpointer=None):
         )
 
         vision_tokens = 0
+        image_summaries: list[str] = []
         for item, result in zip(images, results):
             name = item.get("name") or "图片"
             if isinstance(result, BaseException):
@@ -556,8 +600,21 @@ def build_graph(checkpointer=None):
                 blocks.append(f"- {name}：没有识别到可用内容")
             else:
                 blocks.append(f"- {name}：\n{text}")
+                # 图片正文同时做 summarization，进 history 供后续追问使用
+                summary = await _summarize_attachment(text)
+                if summary:
+                    image_summaries.append(f"{_ATTACHMENT_SUMMARY_PREFIX}{summary}")
+                elif len(text) < _ATTACHMENT_SUMMARY_MIN_CHARS and text.strip():
+                    # 太短跳过压缩但也要进 history（否则追问失忆）
+                    image_summaries.append(f"{_ATTACHMENT_SUMMARY_PREFIX}{text[:_ATTACHMENT_SUMMARY_MAX_CHARS]}")
+
         update["attachment_text"] = "\n".join(blocks)
         update["vision_tokens"] = vision_tokens
+        if image_summaries:
+            # 把摘要以 HumanMessage 形式写进 history —— checkpointer 自然持久化
+            # 追问时 history 里带着，模型记得用户发过什么图
+            update["messages"] = [HumanMessage(content="\n".join(image_summaries))]
+            logger.info("图片摘要已进 history：%d 张", len(image_summaries))
         return update
 
     async def route(state: AgentState) -> dict[str, Any]:
