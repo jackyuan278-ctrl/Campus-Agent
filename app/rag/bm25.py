@@ -19,6 +19,7 @@
     落文件就要和 vectors.npy / docs.json 保持同步——那正是之前踩过的
     「向量 579 行、文档 578 条」的坑。宁可花 10ms，不要第三个需要对齐的文件。
 """
+
 import logging
 import math
 import re
@@ -47,11 +48,11 @@ def tokenize(text: str) -> list[str]:
             continue
         if _CJK.fullmatch(seg):
             if len(seg) == 1:
-                tokens.append(seg)          # 单字保留（"书"这种查询）
+                tokens.append(seg)  # 单字保留（"书"这种查询）
             else:
-                tokens.extend(seg[i:i + 2] for i in range(len(seg) - 1))
+                tokens.extend(seg[i : i + 2] for i in range(len(seg) - 1))
         else:
-            tokens.append(seg)              # 英文/数字整段保留
+            tokens.append(seg)  # 英文/数字整段保留
     return tokens
 
 

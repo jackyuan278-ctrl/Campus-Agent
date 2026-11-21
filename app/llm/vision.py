@@ -9,6 +9,7 @@
 代价：多一次模型调用（图片越多越慢），所以节点里限制一次最多读 MAX_IMAGES 张。
 一次读 5 张时会并发发起 5 个视觉请求，这里再加一道闸门，避免把 GLM 打到限流。
 """
+
 import asyncio
 import logging
 
@@ -39,6 +40,7 @@ def _vision_semaphore() -> asyncio.Semaphore:
         _vision_sem_loop = loop
     return _vision_sem
 
+
 DEFAULT_PROMPT = """请用中文描述这张图片，供后续对话使用：
 1. 图里有文字就逐字提取（OCR），保留标题、编号和换行；
 2. 是题目就把题干、选项、已知条件完整抄下来；
@@ -66,7 +68,7 @@ def _get_client() -> AsyncOpenAI:
         _client = AsyncOpenAI(
             api_key=settings.llm_api_key,
             base_url=settings.llm_base_url,
-            timeout=60,       # 视觉模型比文本慢，给宽一点
+            timeout=60,  # 视觉模型比文本慢，给宽一点
             max_retries=1,
         )
     return _client

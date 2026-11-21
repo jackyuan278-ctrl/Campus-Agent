@@ -3,6 +3,7 @@
 这类 bug 最难查的地方在于「没有异常」：请求全部返回 200，日志干干净净，
 只有用户会发现「我刚才说的话它不记得了」。
 """
+
 import asyncio
 
 import pytest
@@ -35,9 +36,7 @@ class _DummyStore:
 
 @pytest.fixture
 def graph_and_saver(monkeypatch):
-    monkeypatch.setattr(
-        graph_module, "get_chat_model", lambda **kw: _NewIdModel(messages=iter([]))
-    )
+    monkeypatch.setattr(graph_module, "get_chat_model", lambda **kw: _NewIdModel(messages=iter([])))
     monkeypatch.setattr(graph_module, "MemoryStore", _DummyStore)
     saver = MemorySaver()
     return graph_module.build_graph(saver), saver
@@ -73,7 +72,9 @@ def test_same_thread_requests_are_serialized(graph_and_saver):
 
     assert all(r.get("answer") == "好的" for r in results), "每个请求本身都应成功"
     messages = _messages_of(saver, thread_id)
-    assert len(messages) == 8, f"应保留 4 问 4 答，实际 {len(messages)} 条：{[m.content for m in messages]}"
+    assert len(messages) == 8, (
+        f"应保留 4 问 4 答，实际 {len(messages)} 条：{[m.content for m in messages]}"
+    )
     human = [m.content for m in messages if m.type == "human"]
     assert human == ["第0句", "第1句", "第2句", "第3句"], "四轮提问都要在，顺序不能乱"
 

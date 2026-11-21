@@ -16,6 +16,7 @@
     抽出来之后在 markdown 里也是坏链（指向 zip 内部相对路径），所以统一剔除，
     并在正文开头说明「原文有 N 张图，未解析」，避免模型以为看懂了图表。
 """
+
 import asyncio
 import io
 import logging

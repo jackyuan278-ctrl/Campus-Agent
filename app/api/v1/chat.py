@@ -4,6 +4,7 @@
 - 默认 SSE：Content-Type: text/event-stream，逐 token 推 `data: {"delta": "..."}`
 - `?stream=false`：一次性返回 JSON，结构为 {"data": {"content": ..., "thread_id": ..., "intent": ...}}
 """
+
 import json
 import logging
 from typing import Annotated, Any
@@ -36,9 +37,8 @@ async def _get_graph(request: Request):
 
 def _is_conn_error(exc: Exception) -> bool:
     """判断是不是「连接断了」这类可重试异常。"""
-    return (
-        type(exc).__name__ in ("InterfaceError", "OperationalError")
-        or "Not connected" in str(exc)
+    return type(exc).__name__ in ("InterfaceError", "OperationalError") or "Not connected" in str(
+        exc
     )
 
 

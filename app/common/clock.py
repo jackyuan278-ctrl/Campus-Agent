@@ -16,6 +16,7 @@
     ZoneInfoNotFoundError。中国 1991 年后不实行夏令时，固定 +08:00 与 Asia/Shanghai
     完全等价，所以退化成固定偏移是安全的，不需要给镜像装 tzdata。
 """
+
 import logging
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
@@ -55,7 +56,9 @@ def describe_now(now: datetime | None = None) -> str:
     return f"{base:%Y-%m-%d} 周{_WEEKDAYS[base.weekday()]} {base:%H:%M}"
 
 
-def range_of(time_range: str, now: datetime | None = None) -> tuple[datetime | None, datetime | None]:
+def range_of(
+    time_range: str, now: datetime | None = None
+) -> tuple[datetime | None, datetime | None]:
     """把档位名换算成 [start, end) 左闭右开区间；None 表示该侧不设限。
 
     语义选择（决定了用户看到什么）：

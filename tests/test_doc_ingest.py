@@ -3,6 +3,7 @@
 切块质量直接决定检索能不能命中，所以这部分单独锁住：
 块太大浪费 token、块太小丢上下文、重叠没了答案会被切断。
 """
+
 from app.rag.doc_ingest import is_document, split_markdown
 
 SIZE = 200

@@ -1,4 +1,5 @@
 """图片入参测试：附件经视觉模型转成文字后进入对话。"""
+
 import asyncio
 
 import pytest
@@ -95,6 +96,7 @@ def test_attachment_only_message_gets_default_text(graph):
 
 def test_document_attachment_uses_vector_retrieval(graph, monkeypatch):
     """PDF 走向量检索：只带回相关段落，绝不触发视觉模型。"""
+
     async def fake_embed(text):
         CAPTURED["embed_query"] = text
         return [0.1, 0.2, 0.3, 0.4]
@@ -124,6 +126,7 @@ def test_document_attachment_uses_vector_retrieval(graph, monkeypatch):
 
 def test_document_without_hits_tells_model_to_be_honest(graph, monkeypatch):
     """检索不到内容时，明确告诉模型「别猜」，而不是让它自由发挥。"""
+
     async def fake_embed(text):
         return [0.1, 0.2, 0.3, 0.4]
 

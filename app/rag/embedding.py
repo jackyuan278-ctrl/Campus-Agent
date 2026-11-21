@@ -4,6 +4,7 @@
 1. openai SDK 新版默认 `encoding_format="base64"`，TokenHub 只接受 float，必须显式传
 2. 单次请求有输入条数/长度上限，所以要分批
 """
+
 import logging
 
 from openai import APIError, AsyncOpenAI
@@ -61,7 +62,7 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
     vectors: list[list[float]] = []
 
     for start in range(0, len(texts), BATCH_SIZE):
-        batch = texts[start:start + BATCH_SIZE]
+        batch = texts[start : start + BATCH_SIZE]
         try:
             resp = await client.embeddings.create(
                 model=settings.embedding_model,

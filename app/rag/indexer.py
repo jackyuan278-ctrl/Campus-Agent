@@ -8,6 +8,7 @@
 
 这样每条消息只花 1 次 embedding（删除是 0 次），不需要重算整个索引。
 """
+
 import argparse
 import asyncio
 import logging

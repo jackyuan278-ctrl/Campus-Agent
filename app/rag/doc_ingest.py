@@ -14,6 +14,7 @@
     切成 63 块、烧 63 次 embedding——而真实内容只有 2000 多字。
     文本层是作者写进去的，不是识别出来的，能直抽就绝不走 OCR。
 """
+
 import logging
 import re
 from pathlib import Path
@@ -184,7 +185,10 @@ async def _extract(
                 skipped = low_density_pages(pages, MAX_IMAGE_PAGES)
                 logger.info(
                     "PDF 直抽文本层：%s（%d 页，路由=%s，低密度页 %d 页）",
-                    file_name, len(pages), route, len(skipped),
+                    file_name,
+                    len(pages),
+                    route,
+                    len(skipped),
                 )
                 return build_text(pages, skipped), route, len(skipped)
             if route == ROUTE_TABLE:
@@ -210,9 +214,7 @@ async def index_document(
     raw, route, images = await _extract(file_url, file_name, data)
     markdown = normalize_markdown(raw)
     profile = chunk_profile(route, Path(file_name or "").suffix.lower())
-    chunks = split_with_pages(
-        markdown, profile.size, profile.overlap, profile.inject_heading
-    )
+    chunks = split_with_pages(markdown, profile.size, profile.overlap, profile.inject_heading)
     if not chunks:
         raise MineruError("没有从文档里提取到文字（可能是纯扫描件或空白页）")
 
@@ -221,6 +223,12 @@ async def index_document(
     count = await upsert_chunks(file_url, file_name, chunks, vectors)
     logger.info(
         "文档入索引：%s（%s 路由 / %d 块 / %d 字 / 切分 %d+%d / %d 张图未解析）",
-        file_name, route, count, len(markdown), profile.size, profile.overlap, images,
+        file_name,
+        route,
+        count,
+        len(markdown),
+        profile.size,
+        profile.overlap,
+        images,
     )
     return {"chunks": count, "chars": len(markdown), "images": images, "route": route}

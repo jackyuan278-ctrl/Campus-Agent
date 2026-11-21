@@ -5,6 +5,7 @@ campus-hub 的数据天然挂在 userId 上，campus-agent 的 thread_id 是前�
 
 规则：第一次用到某个 thread_id 的人就是它的 owner，之后别的用户访问一律 403。
 """
+
 import logging
 
 from sqlalchemy import text
@@ -25,10 +26,12 @@ async def ensure_owner(thread_id: str, user_key: str) -> None:
             text("INSERT IGNORE INTO tb_thread_owner (thread_id, user_key) VALUES (:t, :k)"),
             {"t": thread_id, "k": user_key},
         )
-        row = (await conn.execute(
-            text("SELECT user_key FROM tb_thread_owner WHERE thread_id = :t"),
-            {"t": thread_id},
-        )).first()
+        row = (
+            await conn.execute(
+                text("SELECT user_key FROM tb_thread_owner WHERE thread_id = :t"),
+                {"t": thread_id},
+            )
+        ).first()
 
     if row is not None and row[0] != user_key:
         logger.warning(

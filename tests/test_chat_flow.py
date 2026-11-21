@@ -2,6 +2,7 @@
 
 用 conftest 里的 client 夹具：lifespan 会跑，模型是假模型，不产生 API 费用。
 """
+
 from tests.conftest import FAKE_REPLY
 
 
@@ -42,9 +43,13 @@ def test_history_and_clear(client):
     client.post("/assistant/chat?stream=false", json={"message": "第一句", "thread_id": thread_id})
     client.post("/assistant/chat?stream=false", json={"message": "第二句", "thread_id": thread_id})
 
-    messages = client.get("/assistant/chat/messages", params={"thread_id": thread_id}).json()["data"]
+    messages = client.get("/assistant/chat/messages", params={"thread_id": thread_id}).json()[
+        "data"
+    ]
     assert len(messages) == 4
     assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]
 
     client.delete("/assistant/chat/messages", params={"thread_id": thread_id})
-    assert client.get("/assistant/chat/messages", params={"thread_id": thread_id}).json()["data"] == []
+    assert (
+        client.get("/assistant/chat/messages", params={"thread_id": thread_id}).json()["data"] == []
+    )

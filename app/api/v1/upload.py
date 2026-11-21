@@ -14,6 +14,7 @@
     对话里，用户就要对着空聊天框干等，而且失败会直接导致提问失败。
     解析失败不影响上传成功——文件已经在 OSS 里，退回去没有意义。
 """
+
 import asyncio
 import logging
 from typing import Annotated

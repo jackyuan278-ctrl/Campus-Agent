@@ -1,4 +1,5 @@
 """应用入口：FastAPI 实例 + 生命周期 + 全局异常处理 + 路由挂载。"""
+
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -33,9 +34,7 @@ async def lifespan(app: FastAPI):
     missing = settings.validate_required()
     if missing:
         # 直接抛错让进程起不来：错配置跑起来的服务比不启动更难排查
-        raise ConfigError(
-            f"缺少必填配置：{', '.join(missing)}（请在项目根目录 .env 中补齐）"
-        )
+        raise ConfigError(f"缺少必填配置：{', '.join(missing)}（请在项目根目录 .env 中补齐）")
     settings.warn_suspicious()
 
     logger.info(
@@ -69,6 +68,7 @@ async def lifespan(app: FastAPI):
         doc_store.aclose()
         await dispose_all()
         logger.info("服务已关闭")
+
 
 app = FastAPI(
     title="CampusHub Agent API",

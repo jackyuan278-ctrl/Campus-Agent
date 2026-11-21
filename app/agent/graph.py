@@ -29,6 +29,7 @@
     summarize      压缩状态里的 messages（有损、保语义），管「这次发多少」
     tb_chat_message 可读的对话记录，管「人查得到」
 """
+
 import asyncio
 import logging
 import re
@@ -63,7 +64,7 @@ from app.llm.vision import describe_image
 from app.memory.quota import add_usage
 from app.memory.store import MemoryStore
 from app.rag.doc_ingest import is_document
-from app.rag.doc_store import search_chunks
+from app.rag.doc_store import get_all_chunks, search_chunks
 from app.rag.embedding import embed_query
 
 logger = logging.getLogger(__name__)
@@ -214,6 +215,11 @@ _ATTACHMENT_SUMMARY_MIN_CHARS = 120
 # 压缩后写入 history 的上限（字符数）。摘要模型超了就截断。
 _ATTACHMENT_SUMMARY_MAX_CHARS = 120
 
+# PDF/Word 短文档阈值（字符数）。短于这个直接全文注入 + summarization 进 history，
+# 比向量检索 top 4 块更靠谱（不丢上下文，追问自动带着）。
+# 超过这个就走 _document_blocks 向量检索——4 块约 1600 字 ≈ 1000 token。
+_DOC_SHORT_CHARS = 2000
+
 
 def tools_for_mode(mode: str | None) -> list[BaseTool]:
     """本轮给模型哪些工具（装配阶段定死，不随对话内容变）。
@@ -265,9 +271,11 @@ def _scan_untrusted(text: str, where: str, thread_id: str | None = None) -> None
         if match:
             logger.warning(
                 "疑似提示注入：来源=%s thread=%s 命中=%r 片段=%r",
-                where, thread_id, match.group(0),
+                where,
+                thread_id,
+                match.group(0),
                 # 只截 60 字：日志里不该出现整段用户内容（可能含个人信息）
-                text[max(0, match.start() - 20): match.start() + 60].replace("\n", " "),
+                text[max(0, match.start() - 20) : match.start() + 60].replace("\n", " "),
             )
             return
 
@@ -331,7 +339,9 @@ def _handle_tool_error(exc: Exception) -> str:
     logger.warning("工具执行失败，已降级为错误消息：%s", exc, exc_info=exc)
 
     name = type(exc).__name__.lower()
-    reason = "查询超时" if ("timeout" in name or "timeout" in str(exc).lower()) else "查询服务暂时不可用"
+    reason = (
+        "查询超时" if ("timeout" in name or "timeout" in str(exc).lower()) else "查询服务暂时不可用"
+    )
     return (
         f"（{reason}，这次没有取到数据）"
         "请用一句口语化的话告诉用户：这次查询没成功，稍等一下再试；"
@@ -346,7 +356,10 @@ def _localize_summary(patch: dict[str, Any]) -> None:
     对中文场景不自然，且会和中文摘要混在一起。这里就地替换前缀。
     """
     for msg in patch.get("messages") or []:
-        if isinstance(msg, HumanMessage) and msg.additional_kwargs.get("lc_source") == "summarization":
+        if (
+            isinstance(msg, HumanMessage)
+            and msg.additional_kwargs.get("lc_source") == "summarization"
+        ):
             msg.content = str(msg.content).replace(
                 "Here is a summary of the conversation to date:", "【此前对话摘要】"
             )
@@ -448,7 +461,7 @@ def _with_attachments(
             f"<retrieved>\n{attachment_text}\n</retrieved>"
         )
     )
-    return [*history[:index], merged, *history[index + 1:]]
+    return [*history[:index], merged, *history[index + 1 :]]
 
 
 def build_graph(checkpointer=None):
@@ -532,7 +545,9 @@ def build_graph(checkpointer=None):
         for item in attachments:
             if _looks_like_image(item) and item.get("url"):
                 images.append(item)
-            elif item.get("url") and is_document(str(item.get("type") or ""), str(item.get("name") or "")):
+            elif item.get("url") and is_document(
+                str(item.get("type") or ""), str(item.get("name") or "")
+            ):
                 documents.append(item)
             else:
                 unsupported.append(item)
@@ -543,8 +558,7 @@ def build_graph(checkpointer=None):
         # 本轮带了文档 → 记住地址，供之后几轮追问重新检索（一份文档几十字节）
         if documents:
             update["doc_urls"] = [
-                {"name": str(d.get("name") or "文档"), "url": str(d.get("url"))}
-                for d in documents
+                {"name": str(d.get("name") or "文档"), "url": str(d.get("url"))} for d in documents
             ]
         elif not attachments and state.get("mode") == "doc":
             # 本轮没带附件，但会话里之前传过文档 → 用这次的问题重新检索一遍。
@@ -556,9 +570,46 @@ def build_graph(checkpointer=None):
                 documents = stored
                 logger.info("doc 档追问：复用会话内 %d 份文档重新检索", len(stored))
 
-        # 文档：按这次提问做向量检索，只带回最相关的几块（不是全文）
+        # 文档：短于 _DOC_SHORT_CHARS 直接全文注入 + summarization 进 history；
+        # 超过就走向量检索 top 4 块（与之前逻辑一致）。
+        # 追问复用的文档（来自上一轮 doc_urls）跳过 summarization——上次已经做过了。
+        doc_summaries: list[str] = []
         if documents:
-            blocks.extend(await _document_blocks(documents, state.get("query") or ""))
+            prev_urls = {str(d.get("url")) for d in (state.get("doc_urls") or [])}
+            new_urls = {
+                str(d.get("url"))
+                for d in (update.get("doc_urls") or [])
+                if str(d.get("url")) not in prev_urls
+            }
+            for doc in documents:
+                url = str(doc.get("url"))
+                name = str(doc.get("name") or "文档")
+                try:
+                    chunks = await get_all_chunks(url)
+                except Exception:
+                    logger.exception("短文档检查失败：%s", name)
+                    chunks = []
+                if chunks:
+                    full_text = "\n\n".join(chunks)
+                    if len(full_text) < _DOC_SHORT_CHARS:
+                        # 短文档：全文当轮注入（比向量检索 4 块不丢上下文）
+                        blocks.append(f"- {name} 全文：\n{full_text}")
+                        # 新上传的做 summarization 进 history（追问复用的已做过）
+                        if url in new_urls:
+                            summary = await _summarize_attachment(full_text)
+                            if summary:
+                                doc_summaries.append(f"{_ATTACHMENT_SUMMARY_PREFIX}{summary}")
+                            elif len(full_text.strip()) >= _ATTACHMENT_SUMMARY_MIN_CHARS:
+                                doc_summaries.append(
+                                    f"{_ATTACHMENT_SUMMARY_PREFIX}{full_text[:_ATTACHMENT_SUMMARY_MAX_CHARS]}"
+                                )
+                    else:
+                        # 长文档：向量检索（和之前一致）
+                        blocks.extend(await _document_blocks([doc], state.get("query") or ""))
+                else:
+                    # Milvus 里没这份文档的 chunks——可能索引还没建好（ race condition：
+                    # 上传 → 对话几乎同时发生），退回到向量检索让它自己报"没检到"
+                    blocks.extend(await _document_blocks([doc], state.get("query") or ""))
 
         if unsupported:
             # 明确告诉模型"这些附件处理不了"，而不是让它对着一堆文件名瞎猜
@@ -588,7 +639,7 @@ def build_graph(checkpointer=None):
 
         vision_tokens = 0
         image_summaries: list[str] = []
-        for item, result in zip(images, results):
+        for item, result in zip(images, results, strict=True):
             name = item.get("name") or "图片"
             if isinstance(result, BaseException):
                 logger.warning("图片识别失败：%s（%s）", name, result)
@@ -606,15 +657,22 @@ def build_graph(checkpointer=None):
                     image_summaries.append(f"{_ATTACHMENT_SUMMARY_PREFIX}{summary}")
                 elif len(text) < _ATTACHMENT_SUMMARY_MIN_CHARS and text.strip():
                     # 太短跳过压缩但也要进 history（否则追问失忆）
-                    image_summaries.append(f"{_ATTACHMENT_SUMMARY_PREFIX}{text[:_ATTACHMENT_SUMMARY_MAX_CHARS]}")
+                    image_summaries.append(
+                        f"{_ATTACHMENT_SUMMARY_PREFIX}{text[:_ATTACHMENT_SUMMARY_MAX_CHARS]}"
+                    )
 
         update["attachment_text"] = "\n".join(blocks)
         update["vision_tokens"] = vision_tokens
-        if image_summaries:
+        all_summaries = [*image_summaries, *doc_summaries]
+        if all_summaries:
             # 把摘要以 HumanMessage 形式写进 history —— checkpointer 自然持久化
-            # 追问时 history 里带着，模型记得用户发过什么图
-            update["messages"] = [HumanMessage(content="\n".join(image_summaries))]
-            logger.info("图片摘要已进 history：%d 张", len(image_summaries))
+            # 追问时 history 里带着，模型记得用户发过什么图/什么文档
+            update["messages"] = [HumanMessage(content="\n".join(all_summaries))]
+            logger.info(
+                "附件摘要已进 history：图片 %d 张 + 文档 %d 份",
+                len(image_summaries),
+                len(doc_summaries),
+            )
         return update
 
     async def route(state: AgentState) -> dict[str, Any]:
@@ -636,7 +694,10 @@ def build_graph(checkpointer=None):
 
         logger.info(
             "route：thread=%s mode=%s intent=%s 附件=%d",
-            state.get("thread_id"), state.get("mode"), intent, len(state.get("attachments") or []),
+            state.get("thread_id"),
+            state.get("mode"),
+            intent,
+            len(state.get("attachments") or []),
         )
         return {
             "intent": intent,
@@ -674,7 +735,8 @@ def build_graph(checkpointer=None):
         if calls:
             logger.info(
                 "agent：模型请求 %d 个工具 → %s",
-                len(calls), [c.get("name") for c in calls],
+                len(calls),
+                [c.get("name") for c in calls],
             )
         return {
             "messages": [resp],
@@ -734,7 +796,8 @@ def build_graph(checkpointer=None):
             # 这时候继续给工具只会越滚越大，让它用已有信息收尾。
             logger.warning(
                 "单轮 token 已达 %d（上限 %d），停止工具调用",
-                state.get("turn_tokens", 0), MAX_TURN_TOKENS,
+                state.get("turn_tokens", 0),
+                MAX_TURN_TOKENS,
             )
             return "persist"
         return "tools"
@@ -744,7 +807,9 @@ def build_graph(checkpointer=None):
     graph.add_node("image_agent", image_agent)
     graph.add_node("route", route)
     graph.add_node("agent", agent)
-    graph.add_node("tools", ToolNode(registry.get_all_tools(), handle_tool_errors=_handle_tool_error))
+    graph.add_node(
+        "tools", ToolNode(registry.get_all_tools(), handle_tool_errors=_handle_tool_error)
+    )
     graph.add_node("strip_calls", strip_calls)
     graph.add_node("persist", persist)
 
@@ -767,7 +832,7 @@ def build_graph(checkpointer=None):
 # ===== Skill 注册 =====
 # 各 tool 模块声明自己服务哪些 mode。graph.py 不再硬编码 mode→tools 映射。
 # 加新功能只需这里多一行 xxx.register(registry)，内部代码不动。
-from app.agent.tools import secondhand, activity, web  # noqa: E402 - 放在末尾避免循环 import
+from app.agent.tools import activity, secondhand, web  # noqa: E402 - 放在末尾避免循环 import
 
 secondhand.register(registry)
 activity.register(registry)

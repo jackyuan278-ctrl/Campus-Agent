@@ -20,6 +20,7 @@ Java 侧（campus-hub）发消息示例：
 3. **失败不无限重试**：第一次失败 nack 重新入队，第二次（redelivered）还失败就
    reject 丢弃——宁可丢一条消息（事后跑一次全量 ingest 就能补），也不要卡住队列。
 """
+
 import asyncio
 import json
 import logging
@@ -71,9 +72,7 @@ async def _keep_lock_alive(conn) -> None:
         logger.warning("消费者锁已丢失（holder=%s, 本连接=%s），尝试重新获取", holder, own)
         try:
             got = (
-                await conn.execute(
-                    text("SELECT GET_LOCK(:name, 0)"), {"name": _LOCK_NAME}
-                )
+                await conn.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": _LOCK_NAME})
             ).scalar()
         except Exception:
             logger.exception("重新获取消费者锁失败")
@@ -82,7 +81,9 @@ async def _keep_lock_alive(conn) -> None:
             logger.info("已重新获得消费者锁：%s", _LOCK_NAME)
         else:
             # 另一个进程抢先了。不停摆：停了两边都没人消费更糟，这里只提醒排查。
-            logger.error("消费者锁被其他进程持有（%s），本进程可能重复消费，请确认是否重复启动", _LOCK_NAME)
+            logger.error(
+                "消费者锁被其他进程持有（%s），本进程可能重复消费，请确认是否重复启动", _LOCK_NAME
+            )
 
 
 @asynccontextmanager
@@ -98,13 +99,9 @@ async def _exclusive_lock() -> AsyncIterator[None]:
     """
     engine = get_agent_engine()
     async with engine.connect() as conn:
-        got = (
-            await conn.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": _LOCK_NAME})
-        ).scalar()
+        got = (await conn.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": _LOCK_NAME})).scalar()
         if got != 1:
-            raise RuntimeError(
-                f"已有消费者持有锁 {_LOCK_NAME}，本进程退出（确认是否重复启动）"
-            )
+            raise RuntimeError(f"已有消费者持有锁 {_LOCK_NAME}，本进程退出（确认是否重复启动）")
         logger.info("已获得消费者锁：%s", _LOCK_NAME)
         keeper = asyncio.create_task(_keep_lock_alive(conn))
         try:

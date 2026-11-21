@@ -9,7 +9,7 @@
 class AppError(Exception):
     """可预期异常的基类。"""
 
-    code: int = 500        # 业务错误码（响应体里的 code）
+    code: int = 500  # 业务错误码（响应体里的 code）
     status_code: int = 500  # HTTP 状态码
     message: str = "服务内部错误"
 

@@ -1,4 +1,5 @@
 """对话相关的请求/响应模型。"""
+
 import ipaddress
 from typing import Annotated
 from urllib.parse import urlparse

@@ -6,6 +6,7 @@
   所以单轮可能略微超出配额（最多超一轮的量），这是行业惯例，不追求精确拦截。
 - **记在 MySQL 而不是内存**：多进程/重启后不清零；一张日聚合表，UPSERT 一条语句搞定。
 """
+
 import logging
 from dataclasses import dataclass
 
@@ -39,8 +40,7 @@ async def get_quota(user_key: str) -> QuotaState:
     """查当天已用 token。没有记录就是 0。"""
     limit = get_settings().daily_token_quota
     sql = text(
-        "SELECT total_tokens FROM tb_token_usage "
-        "WHERE user_key = :key AND usage_date = CURDATE()"
+        "SELECT total_tokens FROM tb_token_usage WHERE user_key = :key AND usage_date = CURDATE()"
     )
     async with get_agent_engine().connect() as conn:
         row = (await conn.execute(sql, {"key": user_key})).first()
@@ -71,8 +71,7 @@ async def check_upload_quota(user_key: str) -> None:
     """
     limit = get_settings().daily_upload_limit
     sql = text(
-        "SELECT upload_count FROM tb_upload_usage "
-        "WHERE user_key = :key AND usage_date = CURDATE()"
+        "SELECT upload_count FROM tb_upload_usage WHERE user_key = :key AND usage_date = CURDATE()"
     )
     async with get_agent_engine().connect() as conn:
         row = (await conn.execute(sql, {"key": user_key})).first()
@@ -91,8 +90,7 @@ async def consume_upload(user_key: str) -> None:
     """
     limit = get_settings().daily_upload_limit
     sql_count = text(
-        "SELECT upload_count FROM tb_upload_usage "
-        "WHERE user_key = :key AND usage_date = CURDATE()"
+        "SELECT upload_count FROM tb_upload_usage WHERE user_key = :key AND usage_date = CURDATE()"
     )
     async with get_agent_engine().begin() as conn:
         row = (await conn.execute(sql_count, {"key": user_key})).first()

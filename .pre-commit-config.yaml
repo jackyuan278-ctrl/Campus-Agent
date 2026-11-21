@@ -1,0 +1,11 @@
+# pre-commit hook：commit 前自动跑 ruff check + ruff format
+# 安装：pip install pre-commit && pre-commit install
+# 手动全量跑：pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # 用本地已装的 ruff——锁版本避免环境漂移
+    rev: v0.17.6
+    hooks:
+      - id: ruff
+        args: [--fix]          # 能自动修的（import 排序、未使用的变量）直接修
+      - id: ruff-format

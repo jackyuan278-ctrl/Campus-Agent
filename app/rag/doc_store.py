@@ -13,6 +13,7 @@
 MilvusClient 是同步 API，全部包在 asyncio.to_thread 里——一次插入几百条
 向量要几十毫秒，直接在事件循环里跑会卡住同进程的其它请求。
 """
+
 import asyncio
 import logging
 from pathlib import Path
@@ -73,7 +74,7 @@ def _ensure_collection(client: MilvusClient, dim: int) -> None:
     client.create_collection(
         collection_name=COLLECTION,
         dimension=dim,
-        metric_type="COSINE",   # 与校园库的余弦口径保持一致
+        metric_type="COSINE",  # 与校园库的余弦口径保持一致
         auto_id=True,
         enable_dynamic_field=True,  # file_url / text 等放在动态字段里
     )
@@ -195,6 +196,33 @@ async def search_chunks(file_url: str, vector: list[float], top_k: int) -> list[
                 text = f"{text}\n【该块包含的图片】{image_text}"
             out.append(text)
         return out
+
+    return await asyncio.to_thread(_work)
+
+
+async def get_all_chunks(file_url: str) -> list[str]:
+    """取出一份文件的全部块（按 chunk_index 排序），拼成近似全文。
+
+    短文档（< 2000 字）用这个替代向量检索——不用只为了 4 次 query embedding
+    就去拉最相关的 4 块，直接全文注入 prompt 更靠谱；同时 summarization
+    进 history，让追问自然带着上下文。
+
+    Milvus 的 query 不需要向量——纯标量 filter 就能取，所以零 embedding 成本。
+    """
+
+    def _work() -> list[str]:
+        client = _get_client()
+        if not client.has_collection(COLLECTION):
+            return []
+        _ensure_loaded(client)
+        rows = client.query(
+            COLLECTION,
+            filter=f'file_url == "{_escape(file_url)}"',
+            output_fields=["text", "chunk_index"],
+            limit=2000,  # 单份文档不太可能有 2000 块以上；超了就说明它不是"短文档"
+        )
+        rows.sort(key=lambda r: int(r.get("chunk_index") or 0))
+        return [str(r.get("text") or "").strip() for r in rows if r.get("text")]
 
     return await asyncio.to_thread(_work)
 

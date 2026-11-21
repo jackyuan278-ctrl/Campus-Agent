@@ -1,4 +1,5 @@
 """function calling 测试：模型自己决定调不调工具、调哪个。"""
+
 import asyncio
 
 import pytest
@@ -70,7 +71,11 @@ def graph(monkeypatch):
     async def fake_secondhand(**kwargs):
         return SECONDHAND_HITS
 
-    monkeypatch.setattr(graph_module, "get_chat_model", lambda **kw: ScriptedModel(messages=iter([AIMessage(content="x")])))
+    monkeypatch.setattr(
+        graph_module,
+        "get_chat_model",
+        lambda **kw: ScriptedModel(messages=iter([AIMessage(content="x")])),
+    )
     monkeypatch.setattr(graph_module, "MemoryStore", _DummyStore)
     monkeypatch.setattr(web_module, "search_web", fake_search)
     monkeypatch.setattr(secondhand_module, "search_secondhand_items", fake_secondhand)
@@ -89,20 +94,22 @@ def _run(graph, query, mode, thread_id):
 
 def test_model_calls_tool_then_answers(graph):
     """模型第一轮要工具 → ToolNode 执行 → 结果回灌 → 第二轮出答案。"""
-    SCRIPT.extend([
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "web_search_tool",
-                    "args": {"query": "最近有什么好看的电影"},
-                    "id": "call_1",
-                    "type": "tool_call",
-                }
-            ],
-        ),
-        AIMessage(content="根据检索，推荐三部电影。"),
-    ])
+    SCRIPT.extend(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "web_search_tool",
+                        "args": {"query": "最近有什么好看的电影"},
+                        "id": "call_1",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="根据检索，推荐三部电影。"),
+        ]
+    )
 
     result = _run(graph, "最近有什么好看的电影", "casual", "t-tool")
 
@@ -148,6 +155,7 @@ def test_tool_rounds_exhausted_drops_tool_calls(graph):
     留着的话，下一轮把历史发给上游（OpenAI 兼容协议）会因
     「assistant 带 tool_calls 却没有配对 ToolMessage」判 400，会话永久卡死。
     """
+
     def call(idx: int) -> dict:
         return {
             "name": "search_secondhand_items_tool",
@@ -173,34 +181,36 @@ def test_follow_up_keeps_tools(graph):
     后者不含任何关键词，旧版被判成 other → 空工具集 → 模型只能拿上一轮
     那 5 条旧结果复述，答出来的是「那 5 条里最便宜的」而不是全库最便宜的。
     """
-    SCRIPT.extend([
-        # 第 1 轮：模型要工具 → 拿结果 → 作答
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "search_secondhand_items_tool",
-                    "args": {"keyword": "自行车"},
-                    "id": "call_1",
-                    "type": "tool_call",
-                }
-            ],
-        ),
-        AIMessage(content="找到两台自行车。"),
-        # 第 2 轮追问：模型再要一次工具（这次多带了价格上限）
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "search_secondhand_items_tool",
-                    "args": {"keyword": "自行车", "max_price": 200},
-                    "id": "call_2",
-                    "type": "tool_call",
-                }
-            ],
-        ),
-        AIMessage(content="最便宜的是 180 元那台。"),
-    ])
+    SCRIPT.extend(
+        [
+            # 第 1 轮：模型要工具 → 拿结果 → 作答
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "search_secondhand_items_tool",
+                        "args": {"keyword": "自行车"},
+                        "id": "call_1",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="找到两台自行车。"),
+            # 第 2 轮追问：模型再要一次工具（这次多带了价格上限）
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "search_secondhand_items_tool",
+                        "args": {"keyword": "自行车", "max_price": 200},
+                        "id": "call_2",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="最便宜的是 180 元那台。"),
+        ]
+    )
 
     _run(graph, "有二手自行车吗", "market", "t-followup")
     _run(graph, "最便宜的是哪个", "market", "t-followup")

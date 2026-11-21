@@ -6,6 +6,7 @@
 - 一份数据两个视图：最近 N 条当上下文，全量当聊天记录。
 - 全异步：复用 app.database 的 AsyncEngine（aiomysql）。
 """
+
 import logging
 from typing import Any
 

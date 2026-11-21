@@ -9,6 +9,7 @@
     多一次 HTTP 往返只为了拿一个 userId，不划算；密钥是共享的，本地验签更直接。
     代价是两边密钥必须一致——不一致时所有 token 都会验签失败，所以下面会打 WARNING。
 """
+
 import logging
 
 import jwt
@@ -27,7 +28,7 @@ def parse_user_id(authorization: str | None) -> str | None:
 
     token = authorization.strip()
     if token.lower().startswith(_BEARER_PREFIX):
-        token = token[len(_BEARER_PREFIX):].strip()
+        token = token[len(_BEARER_PREFIX) :].strip()
     if not token:
         return None
 

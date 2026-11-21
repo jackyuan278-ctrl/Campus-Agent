@@ -12,6 +12,7 @@
 放到锁外面就又出现两个写入方各自基于旧索引计算的问题了。代价是一次 ingest
 期间消费者会排队等待，但两边都是低频操作，可以接受。
 """
+
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager

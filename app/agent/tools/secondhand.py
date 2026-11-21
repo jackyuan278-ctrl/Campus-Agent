@@ -11,6 +11,7 @@
 - 返回值必须能 JSON 序列化：Decimal -> float，datetime -> str
 - 排序字段只走白名单，绝不把外部输入拼进 SQL
 """
+
 from typing import Any
 
 from langchain_core.tools import tool
@@ -172,7 +173,7 @@ async def get_secondhand_detail_tool(item_id: int) -> dict[str, Any] | None:
 SECONDHAND_TOOLS = [search_secondhand_items_tool, get_secondhand_detail_tool]
 
 
-def register(r: "SkillRegistry") -> None:
+def register(r: "SkillRegistry") -> None:  # noqa: F821
     """注册二手查询工具。
 
     服务 market（二手估价）、activity（活动推荐）、doc（资料解读）、chat（智能问答）

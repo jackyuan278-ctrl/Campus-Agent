@@ -13,6 +13,7 @@
 （`python -m app.rag.ingest`、MQ 消费者），所以每次取索引都 stat 一下文件
 mtime：变了就重新读盘。stat 是微秒级开销，比「改完必须重启服务」划算。
 """
+
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -33,9 +34,9 @@ _RECALL_K = 30
 # 0.7 保召回排序的主体，0.3 留给「标题精确命中」和「新鲜度」
 _RRF_WEIGHT = 0.7
 _HEUR_WEIGHT = 0.3
-_TITLE_WEIGHT = 0.6      # 启发式分内部：标题命中的占比
-_FRESH_WEIGHT = 0.4      # 启发式分内部：新鲜度的占比
-_FRESH_DAYS = 7          # 7 天内开始的活动给新鲜度加分
+_TITLE_WEIGHT = 0.6  # 启发式分内部：标题命中的占比
+_FRESH_WEIGHT = 0.4  # 启发式分内部：新鲜度的占比
+_FRESH_DAYS = 7  # 7 天内开始的活动给新鲜度加分
 
 _index: VectorIndex | None = None
 _loaded = False
@@ -62,7 +63,7 @@ def get_index() -> VectorIndex | None:
         _index = VectorIndex.load()
         _loaded = True
         _loaded_mtime = mtime
-        _bm25 = None            # 文档变了，关键词索引必须跟着重建
+        _bm25 = None  # 文档变了，关键词索引必须跟着重建
     return _index
 
 
@@ -194,8 +195,12 @@ async def retrieve(
     if results:
         logger.info(
             "检索 %d 条（稠密 %d / 关键词 %d / 融合 %d）：最高分 %.4f（%s）",
-            len(results), len(dense), len(sparse), len(fused),
-            results[0]["score"], results[0].get("title", "")[:20],
+            len(results),
+            len(dense),
+            len(sparse),
+            len(fused),
+            results[0]["score"],
+            results[0].get("title", "")[:20],
         )
     elif where is not None:
         logger.info("检索有谓词但零命中（候选 %d 条全部被过滤）", len(index.docs))

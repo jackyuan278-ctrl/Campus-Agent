@@ -12,6 +12,7 @@
 2. `stream_usage=True`。OpenAI 协议默认只在非流式响应里带 usage，
    不开这个的话 SSE 路径拿不到真实 token 数，配额只能靠估算。
 """
+
 import logging
 
 from langchain_openai import ChatOpenAI
@@ -33,7 +34,7 @@ def get_chat_model(*, temperature: float = 0.3, max_tokens: int = 1500) -> ChatO
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,
         temperature=temperature,
-        max_tokens=max_tokens,   # 推理模型要留足预算，否则内容被思考吃光
+        max_tokens=max_tokens,  # 推理模型要留足预算，否则内容被思考吃光
         timeout=30,
         max_retries=2,
         # 让流式响应也带 usage（OpenAI 协议默认只在非流式返回）。

@@ -7,6 +7,7 @@
   `https://{bucket}.{endpoint}/{key}`，这样前端两边的图片地址格式统一。
 - 白名单/体积在后端**再拦一次**：前端限制只是体验，绕过它太容易。
 """
+
 import asyncio
 import logging
 import uuid
@@ -74,7 +75,9 @@ def _resolve_suffix(filename: str, content_type: str) -> str:
 
 def _build_url(key: str) -> str:
     settings = get_settings()
-    endpoint = settings.oss_endpoint.strip().removeprefix("https://").removeprefix("http://").rstrip("/")
+    endpoint = (
+        settings.oss_endpoint.strip().removeprefix("https://").removeprefix("http://").rstrip("/")
+    )
     return f"https://{settings.oss_bucket}.{endpoint}/{key}"
 
 
@@ -86,7 +89,9 @@ async def upload_bytes(data: bytes, filename: str, content_type: str) -> dict[st
     """
     settings = get_settings()
     if not settings.oss_configured:
-        raise UploadError("文件上传未启用：请在 .env 配置 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET")
+        raise UploadError(
+            "文件上传未启用：请在 .env 配置 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET"
+        )
     if not data:
         raise UploadError("文件内容为空")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -95,7 +100,7 @@ async def upload_bytes(data: bytes, filename: str, content_type: str) -> dict[st
     normalized_type = (content_type or "").split(";")[0].strip().lower()
     if normalized_type not in ALLOWED_TYPES:
         # 微信 / 部分客户端上传的图片 MIME 为空，靠扩展名兜底
-        suffix = filename[filename.rfind("."):].lower() if "." in filename else ""
+        suffix = filename[filename.rfind(".") :].lower() if "." in filename else ""
         guessed = next((k for k, v in ALLOWED_TYPES.items() if v == suffix), "")
         if guessed:
             normalized_type = guessed

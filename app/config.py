@@ -9,6 +9,7 @@
     from app.config import get_settings
     settings = get_settings()
 """
+
 import logging
 import os
 from functools import lru_cache

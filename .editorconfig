@@ -1,0 +1,21 @@
+# 根目录 .editorconfig — 跨编辑器统一缩进/换行/编码
+# ruff format 会自动格式化 Python，但 IDE 没保存时先靠 .editorconfig 兜底
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.py]
+indent_style = space
+indent_size = 4
+
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false   # Markdown 行尾空格有语义
+
+[*.{toml,yaml,yml,json}]
+indent_style = space
+indent_size = 2

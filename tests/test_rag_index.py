@@ -1,4 +1,5 @@
 """向量索引单元测试（纯 numpy，不调 embedding，零 API 费用）。"""
+
 import pytest
 
 from app.rag.index import VectorIndex

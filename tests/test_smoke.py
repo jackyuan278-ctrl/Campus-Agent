@@ -3,6 +3,7 @@
 注意：这里的 client 没用 with 上下文，lifespan 不执行，
 所以状态图未初始化 —— 正好用来测「图没起来时返回 503」。
 """
+
 from fastapi.testclient import TestClient
 
 from app.main import app

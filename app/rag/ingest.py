@@ -12,6 +12,7 @@
    近似重复的向量占满检索候选池（top_k*3 取 15 条，去重后剩 1 条）。
 2. **指纹相同就复用旧向量**。内容没变就不该重复花 embedding 调用。
 """
+
 import argparse
 import asyncio
 import hashlib
@@ -49,8 +50,7 @@ _ACTIVITY_SQL = (
     "FROM tb_activity WHERE status IN (1, 2)"
 )
 _QUESTION_SQL = (
-    "SELECT id, title, content, answer_count, create_time "
-    "FROM tb_question WHERE status = 1"
+    "SELECT id, title, content, answer_count, create_time FROM tb_question WHERE status = 1"
 )
 
 
@@ -106,9 +106,7 @@ async def load_activity(activity_id: int) -> dict | None:
     """按 id 读一条活动。已结束（3）/已取消（4）/不存在返回 None —— 调用方据此删向量。"""
     engine = get_activity_engine()
     async with engine.connect() as conn:
-        result = await conn.execute(
-            text(_ACTIVITY_SQL + " AND id = :id"), {"id": activity_id}
-        )
+        result = await conn.execute(text(_ACTIVITY_SQL + " AND id = :id"), {"id": activity_id})
         row = result.mappings().first()
     return None if row is None else activity_doc(row)
 
@@ -117,9 +115,7 @@ async def load_question(question_id: int) -> dict | None:
     """按 id 读一条问答。隐藏（status≠1）或已删返回 None。"""
     engine = get_community_engine()
     async with engine.connect() as conn:
-        result = await conn.execute(
-            text(_QUESTION_SQL + " AND id = :id"), {"id": question_id}
-        )
+        result = await conn.execute(text(_QUESTION_SQL + " AND id = :id"), {"id": question_id})
         row = result.mappings().first()
     return None if row is None else question_doc(row)
 
@@ -178,7 +174,9 @@ async def build_index(limit_per_source: int = 200, incremental: bool = True) -> 
         doc["fingerprint"] = fp
         docs.append(doc)
     if len(docs) != len(raw):
-        logger.info("去重：%d 条 → %d 条（丢弃 %d 条同内容重复）", len(raw), len(docs), len(raw) - len(docs))
+        logger.info(
+            "去重：%d 条 → %d 条（丢弃 %d 条同内容重复）", len(raw), len(docs), len(raw) - len(docs)
+        )
 
     # 旧索引按指纹建表：老数据没有 fingerprint 字段，用 text 现算（不花钱）
     old_by_fp: dict[str, int] = {}
@@ -205,7 +203,7 @@ async def build_index(limit_per_source: int = 200, incremental: bool = True) -> 
         if pending:
             logger.info("需要向量化 %d 条（复用旧向量 %d 条）", len(pending), reused)
             fresh = await embed_texts([t for _, t in pending])
-            for (pos, _), vector in zip(pending, fresh):
+            for (pos, _), vector in zip(pending, fresh, strict=True):
                 vectors[pos] = vector
         else:
             logger.info("全部复用旧向量（%d 条），本次 0 次 embedding 调用", reused)

@@ -7,6 +7,7 @@
 - 配置不在 import 时固化：每次取 get_settings()，避免测试/改配置后拿到旧值
 - 连接池由 main.py 的 lifespan 在应用退出时统一 dispose（注意是 await）
 """
+
 import logging
 import threading
 

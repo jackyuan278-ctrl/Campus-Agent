@@ -4,6 +4,7 @@
 这样日志格式里的 %(name)s 能看出是哪个模块打的。
 本模块只负责一次性配置根 logger。
 """
+
 import logging
 import sys
 
@@ -20,10 +21,7 @@ class _DropKnownNoise(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        noisy = (
-            record.name.startswith("grpc")
-            and "Method not implemented" in record.getMessage()
-        )
+        noisy = record.name.startswith("grpc") and "Method not implemented" in record.getMessage()
         return not noisy
 
 

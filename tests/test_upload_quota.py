@@ -1,4 +1,5 @@
 """接口层测试：附件上传、配额拦截、鉴权与会话归属。"""
+
 import io
 
 from fastapi.testclient import TestClient
@@ -51,6 +52,7 @@ def test_upload_returns_url(client, monkeypatch):
 
 def test_quota_exceeded_blocks_request(client, monkeypatch):
     """配额用尽时返回 429，且一次模型都不调。"""
+
     async def fake_quota(user_key):
         return QuotaState(user_key=user_key, used=100_000, limit=100_000)
 
@@ -68,6 +70,7 @@ def test_quota_exceeded_blocks_request(client, monkeypatch):
 
 def test_quota_allows_request_when_under_limit(client, monkeypatch):
     """还有余额时正常放行。"""
+
     async def fake_quota(user_key):
         return QuotaState(user_key=user_key, used=1_000, limit=100_000)
 
@@ -89,7 +92,11 @@ def test_endpoints_require_login():
             ("post", "/assistant/chat?stream=false", {"json": {"message": "hi", "thread_id": "t"}}),
             ("get", "/assistant/chat/messages?thread_id=t", {}),
             ("delete", "/assistant/chat/messages?thread_id=t", {}),
-            ("post", "/assistant/upload", {"files": {"file": ("a.png", io.BytesIO(b"x"), "image/png")}}),
+            (
+                "post",
+                "/assistant/upload",
+                {"files": {"file": ("a.png", io.BytesIO(b"x"), "image/png")}},
+            ),
         ]
         for method, url, kwargs in cases:
             resp = getattr(c, method)(url, **kwargs)

@@ -13,6 +13,7 @@
     不是「哪一路更强」，而是「**两路都认可的文档更可信**」。
     一路排第 3、另一路排第 5 的文档，会排在「一路第 1、另一路完全没召回」的前面。
 """
+
 import logging
 from typing import Any
 
@@ -57,6 +58,8 @@ def rrf_fuse(
     multi = sum(1 for n in routes.values() if n > 1)
     logger.debug(
         "RRF 融合：%d 路 → %d 条候选，其中 %d 条被两路同时召回",
-        len(ranked_lists), len(fused), multi,
+        len(ranked_lists),
+        len(fused),
+        multi,
     )
     return [(picked[key], score) for key, score in fused]

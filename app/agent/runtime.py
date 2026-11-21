@@ -9,6 +9,7 @@
     每次取图前 ping 一次；ping 失败就重建 saver 并重新编译图，再交给调用方。
     图是无状态对象（状态都在 MySQL 里），所以重建图不会丢会话。
 """
+
 import asyncio
 import logging
 import time
@@ -36,7 +37,7 @@ class AgentRuntime:
         self._graph: Any = None
         self._lock = asyncio.Lock()
         self._schema_ready = False  # setup() 只需跑一次，重建时跳过
-        self._healthy_until = 0.0   # 探活结果的缓存截止时间（monotonic）
+        self._healthy_until = 0.0  # 探活结果的缓存截止时间（monotonic）
 
     # ---------- 对外只读访问 ----------
 
@@ -90,7 +91,7 @@ class AgentRuntime:
             return False
         now = time.monotonic()
         if now < self._healthy_until:
-            return True          # 5 秒内刚探过，不再打一次 MySQL
+            return True  # 5 秒内刚探过，不再打一次 MySQL
         try:
             # reconnect=False：只探测，不偷偷换连接（换连接会绕过我们的重建逻辑）
             await self._saver.conn.ping(reconnect=False)

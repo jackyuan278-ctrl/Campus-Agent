@@ -14,6 +14,7 @@
     模型最终看到的只有 text。标题只存字段不拼进 text，检索和生成都用不上，
     等于没做。代价是每块多 10~20 字，可以接受——它换来的是「这块属于哪一章」。
 """
+
 import logging
 import re
 from dataclasses import dataclass
@@ -50,7 +51,7 @@ class Chunk:
 
     text: str
     page: int | None = None
-    kind: str = "text"      # text / table
+    kind: str = "text"  # text / table
 
 
 # 「第 N 页」标记行：由 pdf_text.build_text 插入，这里取出来变成字段。
@@ -114,7 +115,7 @@ def split_markdown(
             if len(para) <= hard_limit:
                 chunks.append(para)
             else:
-                chunks.extend(para[i:i + hard_limit] for i in range(0, len(para), hard_limit))
+                chunks.extend(para[i : i + hard_limit] for i in range(0, len(para), hard_limit))
             continue
 
         if not buf:
@@ -130,7 +131,7 @@ def split_markdown(
         # 单段就超过块大小 → 硬切（代码块、超长句子常见）
         while len(buf) > size:
             chunks.append(buf[:size])
-            buf = buf[size - overlap:] if overlap else buf[size:]
+            buf = buf[size - overlap :] if overlap else buf[size:]
 
     if buf.strip():
         chunks.append(buf.strip())
@@ -261,7 +262,5 @@ def split_with_pages(
     for path, chunk_page, body in sections:
         for piece in split_markdown(body, size, overlap):
             text_piece = f"{path}\n{piece}" if (inject_heading and path) else piece
-            chunks.append(
-                Chunk(text=text_piece, page=chunk_page, kind=_kind_of(text_piece))
-            )
+            chunks.append(Chunk(text=text_piece, page=chunk_page, kind=_kind_of(text_piece)))
     return chunks

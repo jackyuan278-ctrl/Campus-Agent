@@ -9,6 +9,7 @@
     看起来完全正常）；而模型填参数，错也错在日志里，能查。function calling 本来就是
     拿来做参数抽取的，没必要为了省一次参数填写去自己写中文时间正则。
 """
+
 import logging
 from datetime import datetime
 from typing import Any
@@ -71,7 +72,7 @@ def _trim(doc: dict[str, Any]) -> dict[str, Any]:
         "id": doc.get("id"),
         "title": doc.get("title"),
         "summary": str(doc.get("content") or "")[:_SUMMARY_CHARS],
-        "extra": doc.get("extra"),              # 地点 + 开始时间（人可读）
+        "extra": doc.get("extra"),  # 地点 + 开始时间（人可读）
         "start_time": doc.get("start_time"),
         "signup_end_time": doc.get("signup_end_time"),
         "score": doc.get("score"),
@@ -113,7 +114,10 @@ async def search_campus_activities(
     )
     logger.info(
         "活动检索：time_range=%s location=%s 命中 %d 条（now=%s）",
-        time_range, location or "-", len(hits), clock.describe_now(now),
+        time_range,
+        location or "-",
+        len(hits),
+        clock.describe_now(now),
     )
     return [_trim(doc) for doc in hits]
 
@@ -121,7 +125,7 @@ async def search_campus_activities(
 CAMPUS_SEARCH_TOOLS = [search_campus_activities]
 
 
-def register(r: "SkillRegistry") -> None:
+def register(r: "SkillRegistry") -> None:  # noqa: F821
     """注册校园检索工具（活动 + 社区帖子）。
 
     服务 market、activity、doc、chat 四个档位，casual 档不给。

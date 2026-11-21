@@ -16,6 +16,7 @@ PDF 的文本层是作者写进去的，不是识别出来的——能直抽就�
     整页扫描的成绩单——图片对象只有 1 个，但全是文字、没有文本层，必须 OCR；
     带页眉 logo 的讲义——图片对象 20 个，但正文全是文本层，直抽最好，logo 是噪声。
 """
+
 import logging
 import re
 from dataclasses import dataclass
@@ -32,10 +33,10 @@ from app.common.constants import (
 logger = logging.getLogger(__name__)
 
 # 文档级路由结果
-ROUTE_TEXT = "text"     # 全页都有文本层、且不是表格：完全不用 OCR
-ROUTE_MIXED = "mixed"   # 部分页是图：直抽 + 对低密度页做视觉补全
-ROUTE_TABLE = "table"   # 表格密集：直抽语序不可靠，交 MinerU 还原版面
-ROUTE_SCAN = "scan"     # 几乎没有文本层：整份交 MinerU
+ROUTE_TEXT = "text"  # 全页都有文本层、且不是表格：完全不用 OCR
+ROUTE_MIXED = "mixed"  # 部分页是图：直抽 + 对低密度页做视觉补全
+ROUTE_TABLE = "table"  # 表格密集：直抽语序不可靠，交 MinerU 还原版面
+ROUTE_SCAN = "scan"  # 几乎没有文本层：整份交 MinerU
 
 # 数字 token：识别表格行用（"计算机概论 必修 48(学时) 2.5 64" 有 4 个）
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")

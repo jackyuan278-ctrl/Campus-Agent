@@ -3,6 +3,7 @@
 阈值在 build_graph 里读的是模块级常量，这里 monkeypatch 成很小的值，
 只跑 5 轮就能触发，避免测试里跑 20 多轮。
 """
+
 import asyncio
 
 import pytest

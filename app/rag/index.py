@@ -4,6 +4,7 @@
 向量矩阵只有 2000 x 1024 个 float32（约 8MB），一次矩阵乘法几十毫秒，
 比维护一个向量库简单得多。数据量上到 10^5 再换 Milvus。
 """
+
 import json
 import logging
 import os
@@ -28,8 +29,8 @@ class VectorIndex:
     vectors 已做 L2 归一化，所以余弦相似度退化成点积（一次矩阵乘）。
     """
 
-    vectors: np.ndarray          # shape: (N, dim), float32, 已归一化
-    docs: list[dict[str, Any]]   # 与 vectors 行一一对应
+    vectors: np.ndarray  # shape: (N, dim), float32, 已归一化
+    docs: list[dict[str, Any]]  # 与 vectors 行一一对应
 
     @classmethod
     def build(cls, vectors: list[list[float]], docs: list[dict[str, Any]]) -> "VectorIndex":
@@ -51,7 +52,9 @@ class VectorIndex:
     def dim(self) -> int:
         return int(self.vectors.shape[1]) if self.vectors.size else 0
 
-    def search(self, query_vector: list[float], top_k: int = 5) -> list[tuple[dict[str, Any], float]]:
+    def search(
+        self, query_vector: list[float], top_k: int = 5
+    ) -> list[tuple[dict[str, Any], float]]:
         """返回 [(doc, score)]，按相似度降序。"""
         if not self.docs:
             return []

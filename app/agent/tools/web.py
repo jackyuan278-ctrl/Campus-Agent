@@ -7,6 +7,7 @@
 使用边界：只在「随便聊聊」档位（mode=casual）下调用，别的档位不搜——
 校园问题有本地库，联网搜反而会引入噪音和延迟。
 """
+
 import logging
 from typing import Any
 
@@ -77,7 +78,7 @@ async def web_search_tool(query: str, max_results: int = 5) -> list[dict[str, An
 WEB_TOOLS = [web_search_tool]
 
 
-def register(r: "SkillRegistry") -> None:
+def register(r: "SkillRegistry") -> None:  # noqa: F821
     """注册联网搜索工具。只给 casual（随便聊聊）档——校园问题用本地库，联网会引入噪音。"""
     from app.agent.skills import SkillRegistry
 
