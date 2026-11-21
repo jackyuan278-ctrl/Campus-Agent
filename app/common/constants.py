@@ -58,3 +58,9 @@ MAX_IMAGE_PAGES = 10
 TABLE_NUMERIC_RATIO = 0.4
 # 表格页占比超过这个值 → 整份文档交给 MinerU
 TABLE_PAGE_RATIO = 0.5
+
+# ---------- Prompt 组装 ----------
+# messages 累计 token 超过 PROMPT_MAX_TOKENS - PROMPT_SAFE_MARGIN 时触发摘要压缩。
+# 固定前缀 + 档位 suffix + 历史 + 附件，总量控制在这个上限内让模型有足够的回复空间。
+PROMPT_MAX_TOKENS = 12_000
+PROMPT_SAFE_MARGIN = 2_000

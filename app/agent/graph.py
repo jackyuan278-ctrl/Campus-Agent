@@ -58,6 +58,8 @@ from app.common.constants import (
     MAX_IMAGES,
     MAX_TOOL_ROUNDS,
     MAX_TURN_TOKENS,
+    PROMPT_MAX_TOKENS,
+    PROMPT_SAFE_MARGIN,
 )
 from app.llm.gateway import get_chat_model
 from app.llm.vision import describe_image
@@ -109,75 +111,68 @@ _INJECTION_PATTERNS = (
     re.compile(r"(reveal|print|repeat)\s+(your\s+)?(system\s+prompt|initial\s+instructions)", re.I),
 )
 
-# 「二手估价」档：报价必须有参照物，否则模型会凭印象编一个数字
-MARKET_SYSTEM_PROMPT = (
-    """你是 CampusHub 校园助手，当前在「二手估价」档位。
-用户想了解闲置物品能卖多少，或者在售商品的行情。
-
-工具使用规则：
-1. 需要真实在售数据时调用 search_secondhand_items_tool 查库，不要凭印象报价。
-2. 查不到同类商品就直说没找到，不要编造价格。
-3. 报价要说明参照物（哪几件在售、什么成色），没有参照物的估价就是瞎猜。
-4. 想看某件商品的描述和交易地点，用 get_secondhand_detail_tool 查详情。
-
-回答风格：中文、口语化、不超过 3 句话；给区间而不是单一数字。"""
-    + _SWITCH_HINT
+# 固定前缀：跨轮稳定、跨档位不变的部分。
+# 智谱 GLM 的隐式上下文缓存按 system prompt 前缀匹配，这个常量要永不改变。
+_PROMPT_FIXED_PREFIX = (
+    "你是 CampusHub 校园助手。\n\n"
+    + _SAFETY
+    + "\n\n"
+    + "用户说「今天」「明天」「这周」「最近」时，一律以注入的时间为准，不要自己推算日期。"
 )
 
-# 「活动推荐」档
-ACTIVITY_SYSTEM_PROMPT = (
-    """你是 CampusHub 校园助手，当前在「活动推荐」档位。
-用户想找校园活动、讲座、比赛、社团招新。
+# 档位后缀：随 mode 变的人设 + 工具规则 + 回答风格。
+# 从原 5 份 prompt 中去掉了公共角色前缀（"你是 CampusHub 校园助手"，已在 FIXED_PREFIX）
+# 和安全约束（原 prompt_for_mode 追加的 _SAFETY，也已在 FIXED_PREFIX）。
+_MODE_SUFFIXES: dict[str, str] = {
+    "market": (
+        "当前在「二手估价」档位。用户想了解闲置物品能卖多少，或者在售商品的行情。\n\n"
+        "工具使用规则：\n"
+        "1. 需要真实在售数据时调用 search_secondhand_items_tool 查库，不要凭印象报价。\n"
+        "2. 查不到同类商品就直说没找到，不要编造价格。\n"
+        "3. 报价要说明参照物（哪几件在售、什么成色），没有参照物的估价就是瞎猜。\n"
+        "4. 想看某件商品的描述和交易地点，用 get_secondhand_detail_tool 查详情。\n\n"
+        "回答风格：中文、口语化、不超过 3 句话；给区间而不是单一数字。" + _SWITCH_HINT
+    ),
+    "activity": (
+        "当前在「活动推荐」档位。用户想找校园活动、讲座、比赛、社团招新。\n\n"
+        "工具使用规则：\n"
+        "1. 用 search_campus_activities 检索真实的活动与帖子，不要编造活动名。\n"
+        "2. 检索为空就直说最近没有，不要凑数。\n"
+        "3. 列活动时带上时间、地点、报名方式（检索结果里有才说）。\n\n"
+        "回答风格：中文、口语化，不超过 4 句话；多个活动列成短条目。" + _SWITCH_HINT
+    ),
+    "doc": (
+        "当前在「资料解读」档位。用户上传讲义或截图，想让你划重点、做总结、回答问题。\n\n"
+        "规则：\n"
+        "1. 文档（PDF / Word / txt / md）已经解析成文字，但为了控制成本，只会把**和这次\n"
+        "   提问最相关的几段**放在提问后面的【附件内容】里，**不是全文**。\n"
+        "2. 只依据给出的段落回答。段落里没有就直说「这份文档里没找到相关内容」，\n"
+        "   不要用常识补，也不要假装读过没给到的部分。\n"
+        "3. 图片附件由视觉模型转成了文字，同样在【附件内容】里，直接基于那段文字回答。\n"
+        "4. 总结按「重点 / 考点 / 需要补充」分段，不要大段复述原文。\n\n"
+        "回答风格：中文，条理清楚，可以用短列表。" + _SWITCH_HINT
+    ),
+    "chat": (
+        "帮同学查二手商品、活动和社区讨论。\n\n"
+        "工具使用规则：\n"
+        "1. 需要商品 / 活动 / 帖子的真实数据时，调用对应工具，不要凭印象回答。\n"
+        "2. 工具返回空结果时，直接说没找到，不要编造。\n"
+        "3. 只依据工具返回的内容描述商品名、价格、成色、时间和地点。\n\n"
+        "回答风格：中文、口语化、不超过 3 句话；有多件商品时简要列出来。" + _SWITCH_HINT
+    ),
+    "casual": (
+        "当前是「随便聊聊」模式，可以聊任何话题。\n\n"
+        "规则：\n"
+        "1. 需要最新或外部信息时才调用联网搜索工具；日常闲聊直接回答，不要调用。\n"
+        "2. 引用检索结果时不要编造链接、数字和日期。\n"
+        "3. 这个档位没有校园库查询能力：被问到二手商品、活动、帖子时，\n"
+        "   明确告诉用户切到「二手估价」「活动推荐」或「智能问答」档再问，不要凭常识编。\n\n"
+        "回答风格：中文、口语化、简洁，不超过 4 句话。"
+    ),
+}
 
-工具使用规则：
-1. 用 search_campus_activities 检索真实的活动与帖子，不要编造活动名。
-2. 检索为空就直说最近没有，不要凑数。
-3. 列活动时带上时间、地点、报名方式（检索结果里有才说）。
-
-回答风格：中文、口语化，不超过 4 句话；多个活动列成短条目。"""
-    + _SWITCH_HINT
-)
-
-# 「资料解读」档：文档只给「相关段落」，不是全文，必须让模型知道这个边界
-DOC_SYSTEM_PROMPT = (
-    """你是 CampusHub 校园助手，当前在「资料解读」档位。
-用户上传讲义或截图，想让你划重点、做总结、回答问题。
-
-规则：
-1. 文档（PDF / Word / txt / md）已经解析成文字，但为了控制成本，只会把**和这次
-   提问最相关的几段**放在提问后面的【附件内容】里，**不是全文**。
-2. 只依据给出的段落回答。段落里没有就直说「这份文档里没找到相关内容」，
-   不要用常识补，也不要假装读过没给到的部分。
-3. 图片附件由视觉模型转成了文字，同样在【附件内容】里，直接基于那段文字回答。
-4. 总结按「重点 / 考点 / 需要补充」分段，不要大段复述原文。
-
-回答风格：中文，条理清楚，可以用短列表。"""
-    + _SWITCH_HINT
-)
-
-# 「智能问答」档：默认档位，也是未知 mode 的兜底
-CHAT_SYSTEM_PROMPT = (
-    """你是 CampusHub 校园助手，帮同学查二手商品、活动和社区讨论。
-
-工具使用规则：
-1. 需要商品 / 活动 / 帖子的真实数据时，调用对应工具，不要凭印象回答。
-2. 工具返回空结果时，直接说没找到，不要编造。
-3. 只依据工具返回的内容描述商品名、价格、成色、时间和地点。
-
-回答风格：中文、口语化、不超过 3 句话；有多件商品时简要列出来。"""
-    + _SWITCH_HINT
-)
-
-# 「随便聊聊」档：本档没有校园库工具，所以要主动引导用户切档
-CASUAL_SYSTEM_PROMPT = """你是 CampusHub 校园助手，当前是「随便聊聊」模式，可以聊任何话题。
-
-规则：
-1. 需要最新或外部信息时才调用联网搜索工具；日常闲聊直接回答，不要调用。
-2. 引用检索结果时不要编造链接、数字和日期。
-3. 这个档位没有校园库查询能力：被问到二手商品、活动、帖子时，
-   明确告诉用户切到「二手估价」「活动推荐」或「智能问答」档再问，不要凭常识编。
-
-回答风格：中文、口语化、简洁，不超过 4 句话。"""
+# 未知档位退回 chat 档的 suffix（prompt_for_mode 兜底用）
+_DEFAULT_MODE_SUFFIX = _MODE_SUFFIXES["chat"]
 
 # 摘要提示词：必须保留 {messages} 占位（中间件用 .format(messages=...) 渲染）。
 # 面向校园问答场景，不沿用默认那份针对编程 agent 的长提示词（很长、很贵）。
@@ -231,30 +226,19 @@ def tools_for_mode(mode: str | None) -> list[BaseTool]:
     ⚠️ 工具集由各 tool 模块的 register() 函数声明，graph.py 不硬编码 mode→tools 映射。
        加新功能只需 graph.py 底部多一行 xxx.register(registry)，内部代码不动。
     """
-    # fallback 用 chat 档的工具集，因为它是未知档位的 prompt 兜底（CHAT_SYSTEM_PROMPT）。
+    # fallback 用 chat 档的工具集，因为它是未知档位的 prompt 兜底（_DEFAULT_MODE_SUFFIX）。
     # 如果 chat 档也没注册（防御性），给空列表让模型只靠自身知识回答。
     fallback = registry.get_tools_for_mode("chat", fallback=[])
     return registry.get_tools_for_mode(mode, fallback=fallback)
 
 
-# 档位 → system prompt。每档一份：视角、工具用法、回答风格都不同
-# （估价要给区间、活动要带时间地点、资料解读要讲清 PDF 还没上线）。
-_MODE_PROMPTS: dict[str, str] = {
-    "market": MARKET_SYSTEM_PROMPT,
-    "activity": ACTIVITY_SYSTEM_PROMPT,
-    "doc": DOC_SYSTEM_PROMPT,
-    "chat": CHAT_SYSTEM_PROMPT,
-    "casual": CASUAL_SYSTEM_PROMPT,
-}
-
-
 def prompt_for_mode(mode: str | None) -> str:
-    """档位 → system prompt。未知档位退回「智能问答」，不报错也不拦。
+    """档位 → 随 mode 变的 suffix。未知档位退回 chat 档 suffix，不报错也不拦。
 
-    安全约束在这里统一追加，而不是写进 5 份 prompt：漏一份就有个洞，
-    而注入防护最怕的就是"某个档位忘了加"。
+    公共角色前缀、安全约束已移到 _PROMPT_FIXED_PREFIX —— 那是跨轮稳定的，
+    智谱 GLM 的隐式上下文缓存依赖这个前缀稳定来命中。
     """
-    return _MODE_PROMPTS.get(mode or "", CHAT_SYSTEM_PROMPT) + _SAFETY
+    return _MODE_SUFFIXES.get(mode or "", _DEFAULT_MODE_SUFFIX)
 
 
 def _scan_untrusted(text: str, where: str, thread_id: str | None = None) -> None:
@@ -281,7 +265,10 @@ def _scan_untrusted(text: str, where: str, thread_id: str | None = None) -> None
 
 
 def time_context() -> str:
-    """每轮现算的时间上下文，拼在 system prompt 末尾。
+    """每轮现算的时间戳，拼在 system prompt 末尾。
+
+    固定文本部分（「用户说今天明天...」）已移到 _PROMPT_FIXED_PREFIX，
+    这里只返回真正随轮次变化的时钟值。
 
     模型不知道今天几号（训练截止在前），而「今天」「这周」「最近」几乎是每个活动问题
     都会带的前提。这类**确定值**用注入，不用工具：
@@ -292,10 +279,7 @@ def time_context() -> str:
     时间必须来自 app.common.clock（显式 +08:00）。容器时区是 UTC，
     直接 datetime.now() 会让 CST 00:00~08:00 这八小时里的「今天」整体错一天。
     """
-    return (
-        f"\n\n当前时间：{clock.describe_now()}（北京时间）。"
-        "用户说「今天」「明天」「这周」「最近」时，一律以这个时间为准，不要自己推算日期。"
-    )
+    return f"当前时间：{clock.describe_now()}（北京时间）。"
 
 
 # 全局并发闸门：GLM 有 QPS 限制，超了直接返回 429，用户看到的是「模型服务不可用」。
@@ -478,29 +462,55 @@ def build_graph(checkpointer=None):
     # 摘要返回空串（之前测过 max_tokens=20 时正文就是空的）。
     summarizer = SummarizationMiddleware(
         model=get_chat_model(temperature=0.0, max_tokens=1500),
-        trigger=("messages", CHAT_SUMMARY_TRIGGER),
+        # SummarizationMiddleware 内部 trigger 固定成 1（总是触发），
+        # 真正的触发条件由外层 summarize 函数按 token 估算 + 条数兜底判断。
+        trigger=("messages", 1),
         keep=("messages", CHAT_SUMMARY_KEEP),
         summary_prompt=SUMMARY_PROMPT,
         trim_tokens_to_summarize=4000,
     )
 
     async def summarize(state: AgentState) -> dict[str, Any]:
-        """上下文压缩：消息超过阈值时，把早期对话交给模型压成一段摘要。
+        """上下文压缩：token 或条数超阈值时，把早期对话交给模型压成一段摘要。
 
         交给 SummarizationMiddleware 做，不是按条截断——截断会直接丢掉
         「用户想找什么、已经查到什么」，下一轮模型就断片。
+
+        触发条件：优先按 token 估算（count_tokens_approximately），
+        同时保留条数兜底兼容现有测试（monkeypatch CHAT_SUMMARY_TRIGGER 生效）。
         """
-        before = len(state.get("messages") or [])
+        messages = state.get("messages") or []
+        # token 估算失败不应阻断对话，降级成 0 让条数兜底起作用
+        try:
+            token_count = count_tokens_approximately(messages)
+        except Exception:  # noqa: BLE001
+            token_count = 0
+
+        need_summary = (
+            token_count >= PROMPT_MAX_TOKENS - PROMPT_SAFE_MARGIN
+            or len(messages) >= CHAT_SUMMARY_TRIGGER
+        )
+        if not need_summary:
+            return {}
+
+        before = len(messages)
         try:
             patch = await summarizer.abefore_model(state, None)  # type: ignore[arg-type]
         except Exception:
             # 摘要失败不应中断对话：宁可这轮多带点上下文，也别让用户拿不到回复。
-            logger.exception("上下文摘要失败，本轮按原样继续（消息数=%d）", before)
+            logger.exception(
+                "上下文摘要失败，本轮按原样继续（消息数=%d token~=%d）", before, token_count
+            )
             return {}
         if not patch:
             return {}
         _localize_summary(patch)
-        logger.info("上下文已压缩：%d 条 → 摘要 + 最近 %d 条", before, CHAT_SUMMARY_KEEP)
+        logger.info(
+            "上下文已压缩：%d 条（~%d token） → 摘要 + 最近 %d 条",
+            before,
+            token_count,
+            CHAT_SUMMARY_KEEP,
+        )
         return patch
 
     async def _summarize_attachment(content: str) -> str | None:
@@ -723,9 +733,12 @@ def build_graph(checkpointer=None):
         if history and isinstance(history[-1], ToolMessage):
             _scan_untrusted(str(history[-1].content), "工具结果", state.get("thread_id"))
 
-        system_prompt = prompt_for_mode(state.get("mode")) + time_context()
+        # 三段 SystemMessage：固定前缀（永远第一 → 缓存命中）+ 档位人设（随 mode 变）
+        # + 当前时间（每轮变）。历史和附件在后面，保证前缀稳定。
         messages = [
-            SystemMessage(content=system_prompt),
+            SystemMessage(content=_PROMPT_FIXED_PREFIX),
+            SystemMessage(content=prompt_for_mode(state.get("mode"))),
+            SystemMessage(content=time_context()),
             *_with_attachments(history, state.get("attachment_text"), state.get("thread_id")),
         ]
 

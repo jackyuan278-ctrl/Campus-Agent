@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.agent.runtime import AgentRuntime
-from app.api.v1 import chat, upload
+from app.api.v1 import chat, responses, upload
 from app.common.exceptions import AppError, ConfigError
 from app.common.logger import setup_logging
 from app.config import get_settings
@@ -102,6 +102,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 # 3. 挂载路由
 app.include_router(chat.router, prefix="/assistant", tags=["助手"])
 app.include_router(upload.router, prefix="/assistant", tags=["助手"])
+app.include_router(responses.router, prefix="/v1", tags=["responses"])
 
 
 @app.get("/health", tags=["系统"])
