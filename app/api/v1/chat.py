@@ -105,15 +105,30 @@ async def chat(
         async with thread_lock(request.thread_id):
             try:
                 async for event in graph.astream_events(inputs, config, version="v2"):
-                    if event["event"] != "on_chat_model_stream":
-                        continue
-                    # 只转发 agent 节点的模型输出。摘要在 summarize 节点里也会调模型，
-                    # 不过滤的话摘要正文会漏进用户的聊天框。
-                    if (event.get("metadata") or {}).get("langgraph_node") != "agent":
-                        continue
-                    text = getattr(event["data"].get("chunk"), "content", "") or ""
-                    if text:
-                        yield _sse({"delta": text})
+                    evt = event.get("event")
+                    node = (event.get("metadata") or {}).get("langgraph_node")
+
+                    # --- 工具调用事件（ToolNode 执行时发出）---
+                    if evt == "on_tool_start" and node == "tools":
+                        yield _sse({
+                            "tool_call": {
+                                "name": event.get("name", "unknown"),
+                                "arguments": event.get("data", {}).get("input", {}),
+                            }
+                        })
+                    elif evt == "on_tool_end" and node == "tools":
+                        yield _sse({
+                            "tool_result": {
+                                "name": event.get("name", "unknown"),
+                            }
+                        })
+                    # --- 模型文本增量（agent 节点）---
+                    elif evt == "on_chat_model_stream":
+                        if node != "agent":
+                            continue
+                        text = getattr(event["data"].get("chunk"), "content", "") or ""
+                        if text:
+                            yield _sse({"delta": text})
             except AppError as exc:
                 # 业务异常（LLMError / QuotaExceededError 等）的 message 是预定义文案，
                 # 可以直接给用户看——比如「模型服务暂时不可用」。
