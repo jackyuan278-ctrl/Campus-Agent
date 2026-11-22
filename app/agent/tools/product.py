@@ -178,4 +178,3 @@ PRODUCT_PROMPT = """你是商品比价助手，擅长帮用户对比多平台价
 def register(r: SkillRegistry) -> None:
     """把商品比价工具包注册进 SkillRegistry — 给 chat 档。"""
     r.register_tools("chat", PRODUCT_TOOLS)
-    r.register_prompt("chat", PRODUCT_PROMPT)

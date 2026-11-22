@@ -134,4 +134,3 @@ MEETING_PROMPT = """你是会议助手，擅长从会议文本里抽待办、整
 def register(r: SkillRegistry) -> None:
     """把会议助手工具包注册进 SkillRegistry — 给 chat 档。"""
     r.register_tools("chat", MEETING_TOOLS)
-    r.register_prompt("chat", MEETING_PROMPT)

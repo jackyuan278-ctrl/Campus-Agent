@@ -175,6 +175,11 @@ STOCK_PROMPT = """你是股票信息查询助手，擅长帮用户查行情、�
 
 
 def register(r: SkillRegistry) -> None:
-    """把股票工具包注册进 SkillRegistry — 给 chat 档。"""
+    """把股票工具包注册进 SkillRegistry。
+
+    - finance（行情资讯）档：主档位，给股票工具 + 风险守卫 prompt
+    - chat（智能问答）档：兜底，也附带股票能力（用户在智能问答里提行情能调）
+    """
+    r.register_tools("finance", STOCK_TOOLS)
+    r.register_prompt("finance", STOCK_PROMPT)
     r.register_tools("chat", STOCK_TOOLS)
-    r.register_prompt("chat", STOCK_PROMPT)

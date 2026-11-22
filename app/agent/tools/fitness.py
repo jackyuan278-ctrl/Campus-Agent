@@ -155,4 +155,3 @@ FITNESS_PROMPT = """你是健身饮食助手，擅长制定训练计划、饮食
 def register(r: SkillRegistry) -> None:
     """把健身饮食工具包注册进 SkillRegistry — 给 chat 档。"""
     r.register_tools("chat", FITNESS_TOOLS)
-    r.register_prompt("chat", FITNESS_PROMPT)

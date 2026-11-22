@@ -96,6 +96,11 @@ LOCAL_KNOWLEDGE_PROMPT = """你是校园知识库助手，擅长帮用户从校�
 
 
 def register(r: SkillRegistry) -> None:
-    """把校园知识库工具注册进 SkillRegistry — 给 chat 档。"""
+    """把校园知识库工具注册进 SkillRegistry。
+
+    - campus（校园问题）档：主档位，给知识库工具 + 校园人设 prompt
+    - chat（智能问答）档：兜底，也附带校园知识库能力
+    """
+    r.register_tools("campus", LOCAL_KNOWLEDGE_TOOLS)
+    r.register_prompt("campus", LOCAL_KNOWLEDGE_PROMPT)
     r.register_tools("chat", LOCAL_KNOWLEDGE_TOOLS)
-    r.register_prompt("chat", LOCAL_KNOWLEDGE_PROMPT)

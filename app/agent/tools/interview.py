@@ -131,4 +131,3 @@ INTERVIEW_PROMPT = """你是求职面试助手，擅长简历评审、模拟面�
 def register(r: SkillRegistry) -> None:
     """把求职面试工具包注册进 SkillRegistry — 给 chat 档。"""
     r.register_tools("chat", INTERVIEW_TOOLS)
-    r.register_prompt("chat", INTERVIEW_PROMPT)

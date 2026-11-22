@@ -244,6 +244,11 @@ LITERATURE_PROMPT = """你是学术文献查询助手，擅长帮用户搜索论
 
 
 def register(r: SkillRegistry) -> None:
-    """把文献查询工具包注册进 SkillRegistry — 给 chat 档。"""
+    """把文献查询工具包注册进 SkillRegistry。
+
+    - research（学术调研）档：主档位，给论文工具 + 学术人设 prompt
+    - chat（智能问答）档：兜底，也附带论文检索能力
+    """
+    r.register_tools("research", LITERATURE_TOOLS)
+    r.register_prompt("research", LITERATURE_PROMPT)
     r.register_tools("chat", LITERATURE_TOOLS)
-    r.register_prompt("chat", LITERATURE_PROMPT)

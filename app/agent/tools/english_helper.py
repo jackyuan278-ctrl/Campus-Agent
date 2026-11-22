@@ -125,4 +125,3 @@ ENGLISH_PROMPT = """你是英语学习助手，擅长解释生词、给口语/�
 def register(r: SkillRegistry) -> None:
     """把英语学习工具包注册进 SkillRegistry — 给 chat 档。"""
     r.register_tools("chat", ENGLISH_TOOLS)
-    r.register_prompt("chat", ENGLISH_PROMPT)

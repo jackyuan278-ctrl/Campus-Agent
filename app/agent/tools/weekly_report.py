@@ -133,4 +133,3 @@ WEEKLY_PROMPT = """你是周报 & OKR 助手，擅长帮用户从任务列表生
 def register(r: SkillRegistry) -> None:
     """把周报工具包注册进 SkillRegistry — 给 chat 档。"""
     r.register_tools("chat", WEEKLY_TOOLS)
-    r.register_prompt("chat", WEEKLY_PROMPT)

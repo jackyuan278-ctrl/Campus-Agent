@@ -113,4 +113,3 @@ CODE_DEV_PROMPT = """你是代码助手，擅长解释代码、排查 bug、给�
 def register(r: SkillRegistry) -> None:
     """把代码助手工具包注册进 SkillRegistry — 给 chat 档。"""
     r.register_tools("chat", CODE_DEV_TOOLS)
-    r.register_prompt("chat", CODE_DEV_PROMPT)

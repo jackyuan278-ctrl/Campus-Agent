@@ -31,6 +31,7 @@ LOCAL_TOOL_NAMES = [
     "search_secondhand_items_tool",
     "get_secondhand_detail_tool",
     "search_campus_activities",
+    "local_knowledge_query",
 ]
 
 SCRIPT: list[AIMessage] = []
@@ -136,10 +137,13 @@ def test_model_answers_without_tool(graph):
 def test_tools_are_static_per_mode():
     """工具集只跟档位有关，跟「这句话被认成什么意图」无关。
 
-    - chat 档：全能力集（校园库 + 股票/文献/比价/代码/面试/英语/周报/健身/会议/本地知识/旅游）
-    - market/activity/doc：校园库专用（二手 + 活动）
+    - campus 档：校园域（二手 + 活动 + 知识库）— LOCAL_TOOL_NAMES
+    - travel 档：旅游工具（weather + flights + hotels + travel_guide）
+    - research 档：论文（search_papers + detail + citation）
+    - finance 档：股票（quote + financials + news）
+    - chat 档：兜底全能力（校园库 + 股票/文献/比价/代码/面试/英语/周报/健身/会议/旅游）
     - casual：只有联网搜索
-    - None / 未知档位：退回校园库专用集（绝不能是空集）
+    - None / 未知档位：退回 campus 档（绝不能是空集）
     """
     chat_tools = [t.name for t in graph_module.tools_for_mode("chat")]
     assert "search_secondhand_items_tool" in chat_tools
@@ -147,15 +151,24 @@ def test_tools_are_static_per_mode():
     assert "get_stock_quote" in chat_tools
     assert "compare_products" in chat_tools
     assert "local_knowledge_query" in chat_tools
-    # 旅游工具也在 chat 档（没有独立 travel mode）
     assert "get_weather" in chat_tools
     assert "search_flights" in chat_tools
 
-    for mode in ("market", "activity", "doc"):
-        assert [t.name for t in graph_module.tools_for_mode(mode)] == LOCAL_TOOL_NAMES, mode
+    # campus 档 = 校园域
+    campus_tools = [t.name for t in graph_module.tools_for_mode("campus")]
+    assert campus_tools == LOCAL_TOOL_NAMES, campus_tools
+
+    # finance 档 = 股票三件套
+    finance_tools = [t.name for t in graph_module.tools_for_mode("finance")]
+    assert set(finance_tools) == {"get_stock_quote", "get_stock_financials", "get_stock_news"}
+
+    # research 档 = 论文三件套
+    research_tools = [t.name for t in graph_module.tools_for_mode("research")]
+    assert set(research_tools) == {"search_papers", "get_paper_detail", "get_citation_graph"}
 
     assert [t.name for t in graph_module.tools_for_mode("casual")] == ["web_search_tool"]
 
+    # None fallback → campus 档（校园域最安全）
     assert [t.name for t in graph_module.tools_for_mode(None)] == LOCAL_TOOL_NAMES
 
 
