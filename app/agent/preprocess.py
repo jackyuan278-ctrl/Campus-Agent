@@ -10,7 +10,8 @@ graph.py 的流程已简化为  START → pre → agent ...（不再单独跑 im
 
 import asyncio
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from langchain_core.messages import HumanMessage
 

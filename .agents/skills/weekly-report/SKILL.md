@@ -1,6 +1,6 @@
 ---
 name: weekly-report
-description: 用户要写周报、做 OKR 复盘、生成汇报材料时触发。触发词：周报、日报、OKR、复盘、汇报、总结。排除：其他。
+description: 用户要写周报、做 OKR 复盘、生成汇报材料时触发。触发词：周报、日报、OKR、复盘、汇报、总结。排除：代码改动、学术调研、产品比价、旅游规划。
 ---
 
 # weekly-report

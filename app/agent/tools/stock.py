@@ -108,23 +108,8 @@ async def get_stock_financials(symbol: str) -> str:
     Args:
         symbol: 股票代码，如 600519、AAPL。
     """
-    # 先尝试真实数据源（AKShare 财务接口较重，简单 try）
-    if not mcp_cfg.is_mock():
-        try:
-            import akshare as ak  # type: ignore
-
-            # 简化：只取 ROE 和 PE-TTM
-            # 注：AKShare 的 financial analysis 接口返回 DataFrame，需解析
-            result: dict[str, Any] = {
-                "symbol": symbol.upper(),
-                "data_source": "akshare",
-                "note": "真实财务数据接口较重，建议用 mock 数据或手动调用 AKShare",
-            }
-            return _with_warning(result)
-        except Exception as exc:
-            logger.warning("股票财务真实 API 失败 symbol=%s: %s，降级 mock", symbol, exc)
-
-    # mock 兜底
+    # AKShare 财务接口较重，且需解析复杂 DataFrame → 纯 mock 设计
+    # 真实接入时：ak.stock_financial_analysis_indicator(symbol) 等
     financials = mcp_cfg.MOCK_STOCK_FINANCIALS.get(symbol.upper())
     if financials is None:
         financials = {

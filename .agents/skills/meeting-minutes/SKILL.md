@@ -1,6 +1,6 @@
 ---
 name: meeting-minutes
-description: 用户要整理会议纪要、抽待办、分配负责人时触发。触发词：会议纪要、待办、action item、minutes。排除：其他。
+description: 用户要整理会议纪要、抽待办、分配负责人时触发。触发词：会议纪要、待办、action item、minutes。排除：日程管理（用 calendar skill）、任务管理（用 task skill）、代码改动。
 ---
 
 # meeting-minutes

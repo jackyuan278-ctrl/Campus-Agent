@@ -15,17 +15,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 
 # 让 uv run python -m app.mcp_server 时能找到 app 包
 import os
+import sys
 
 os.environ.setdefault("APP_LOG_LEVEL", "INFO")
 
 from mcp.server.fastmcp import FastMCP
 
+from app.agent.tools.activity import campus_search, search_campus_activities
 from app.agent.tools.secondhand import search_secondhand_items
-from app.agent.tools.activity import search_campus_activities, campus_search
 from app.agent.tools.web import web_search
 
 logging.basicConfig(

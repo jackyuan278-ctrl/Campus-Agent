@@ -1,6 +1,6 @@
 ---
 name: english-helper
-description: 用户要学生词、英文精读、语法练习时触发。触发词：英语、单词、精读、语法、发音、vocabulary。排除：其他业务。
+description: 用户要学生词、英文精读、语法练习时触发。触发词：英语、单词、精读、语法、发音、vocabulary。排除：翻译、简历、代码、学术论文、旅游规划等非英语学习类请求。
 ---
 
 # english-helper

@@ -107,7 +107,7 @@ async def search_flights(
     date: str,
     passengers: int = 1,
 ) -> str:
-    """查询航班。暂无开放真实 API → 当前返回 mock 数据，等真实 API key 到位后替换。
+    """查询航班。暂无稳定免费开放 API → 纯 mock 设计，等真实 API key 到位后替换。
 
     Args:
         from_city: 出发城市（如「北京」「PEK」）。
@@ -115,16 +115,7 @@ async def search_flights(
         date: 出发日期，格式 YYYY-MM-DD（如 2026-12-01）。
         passengers: 乘客数，默认 1。
     """
-    # 先尝试真实 API（占位：Skyscanner / 携程开放平台等）
-    if not mcp_cfg.is_mock():
-        try:
-            # TODO: 接入真实航班 API
-            # 目前没有稳定的免费航班 API，暂时跳过直接降级
-            pass
-        except Exception as exc:
-            logger.warning("航班真实 API 失败: %s，降级 mock", exc)
-
-    # mock 兜底：从 mcp_cfg.MOCK_FLIGHTS 取数据
+    # 纯 mock 数据源（Skyscanner / 携程开放平台均需付费 key，暂不接入）
     route_key = f"{from_city}_{to_city}"
     flights = mcp_cfg.MOCK_FLIGHTS.get(route_key)
     if flights is None:
@@ -163,7 +154,7 @@ async def search_hotels(
     guests: int = 1,
     budget_max: int = 2000,
 ) -> str:
-    """搜索酒店。暂无开放真实 API → 当前返回 mock 数据，等真实 API key 到位后替换。
+    """搜索酒店。暂无开放真实 API → 纯 mock 设计，等真实 API key 到位后替换。
 
     Args:
         city: 城市名。
@@ -172,15 +163,7 @@ async def search_hotels(
         guests: 人数，默认 1。
         budget_max: 每晚预算上限（元），默认 2000。
     """
-    # 先尝试真实 API（占位）
-    if not mcp_cfg.is_mock():
-        try:
-            # TODO: 接入真实酒店 API
-            pass
-        except Exception as exc:
-            logger.warning("酒店真实 API 失败: %s，降级 mock", exc)
-
-    # mock 兜底：从 mcp_cfg.MOCK_HOTELS 取数据
+    # 纯 mock 数据源（Booking.com / 携程均需付费 key，暂不接入）
     mock_hotels = [
         {**h, "name": f"{city}{h['name']}"}
         for h in mcp_cfg.MOCK_HOTELS
@@ -291,6 +274,6 @@ TRAVEL_PROMPT = """你是旅游规划助手，擅长帮用户一键搞定旅行�
 
 
 def register(r: SkillRegistry) -> None:
-    """把旅游工具包注册进 SkillRegistry — 只给 travel 档。"""
-    r.register_tools("travel", TRAVEL_TOOLS)
-    r.register_prompt("travel", TRAVEL_PROMPT)
+    """把旅游工具包注册进 SkillRegistry — 给 chat 档（chat 是通用问答，涵盖旅游）。"""
+    r.register_tools("chat", TRAVEL_TOOLS)
+    r.register_prompt("chat", TRAVEL_PROMPT)

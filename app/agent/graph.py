@@ -761,20 +761,20 @@ def build_graph(checkpointer=None):
 # 加新功能只需这里多一行 xxx.register(registry)，内部代码不动。
 from app.agent.tools import (  # noqa: E402 - 放在末尾避免循环 import
     activity,
-    secondhand,
-    stock,
-    literature,
-    product,
-    travel,
-    web,
     # 纯 LLM 类 skills
     code_developer,
-    interview,
     english_helper,
-    weekly_report,
     fitness,
-    meeting_minutes,
+    interview,
+    literature,
     local_knowledge,
+    meeting_minutes,
+    product,
+    secondhand,
+    stock,
+    travel,
+    web,
+    weekly_report,
 )
 
 secondhand.register(registry)

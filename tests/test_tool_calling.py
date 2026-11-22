@@ -136,10 +136,9 @@ def test_model_answers_without_tool(graph):
 def test_tools_are_static_per_mode():
     """工具集只跟档位有关，跟「这句话被认成什么意图」无关。
 
-    - chat 档：全能力集（校园库 + 股票/文献/比价/代码/面试/英语/周报/健身/会议/本地知识）
+    - chat 档：全能力集（校园库 + 股票/文献/比价/代码/面试/英语/周报/健身/会议/本地知识/旅游）
     - market/activity/doc：校园库专用（二手 + 活动）
     - casual：只有联网搜索
-    - travel：只有旅游相关
     - None / 未知档位：退回校园库专用集（绝不能是空集）
     """
     chat_tools = [t.name for t in graph_module.tools_for_mode("chat")]
@@ -148,15 +147,14 @@ def test_tools_are_static_per_mode():
     assert "get_stock_quote" in chat_tools
     assert "compare_products" in chat_tools
     assert "local_knowledge_query" in chat_tools
+    # 旅游工具也在 chat 档（没有独立 travel mode）
+    assert "get_weather" in chat_tools
+    assert "search_flights" in chat_tools
 
     for mode in ("market", "activity", "doc"):
         assert [t.name for t in graph_module.tools_for_mode(mode)] == LOCAL_TOOL_NAMES, mode
 
     assert [t.name for t in graph_module.tools_for_mode("casual")] == ["web_search_tool"]
-
-    travel_tools = [t.name for t in graph_module.tools_for_mode("travel")]
-    assert "get_weather" in travel_tools
-    assert "search_flights" in travel_tools
 
     assert [t.name for t in graph_module.tools_for_mode(None)] == LOCAL_TOOL_NAMES
 
