@@ -179,6 +179,7 @@ def register(r: "SkillRegistry") -> None:  # noqa: F821
     服务 market（二手估价）、activity（活动推荐）、doc（资料解读）、chat（智能问答）
     四个档位。casual（随便聊聊）档不给——那个档只有联网搜索。
     """
+    from app.agent.skills import SkillRegistry
 
     r.register_tools("market", SECONDHAND_TOOLS)
     r.register_tools("activity", SECONDHAND_TOOLS)

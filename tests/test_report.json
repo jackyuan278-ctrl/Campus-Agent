@@ -1,0 +1,413 @@
+{
+  "total": 53,
+  "pass": 53,
+  "fail": 0,
+  "skip": 0,
+  "mode": "MOCK",
+  "date": "2026-11-22",
+  "results": [
+    {
+      "skill": "travel",
+      "scene": "get_weather 正常（北京）",
+      "status": "PASS",
+      "detail": "返回 370 chars",
+      "data": {
+        "preview": "{\"city\": \"北京\", \"data_source\": \"mock\", \"current\": {\"temp_c\": 8, \"feels_c\": 5, \"humidity\": 35, \"desc\": \"晴\"}, \"forecast\": [{\"date\": \"2026-11-23\", \"max_te"
+      }
+    },
+    {
+      "skill": "travel",
+      "scene": "get_weather 边界（未知城市 → 通用 mock）",
+      "status": "PASS",
+      "detail": "返回 377 chars",
+      "data": {
+        "preview": "{\"city\": \"马尔代夫\", \"data_source\": \"mock\", \"current\": {\"temp_c\": 20, \"feels_c\": 18, \"humidity\": 60, \"desc\": \"多云\"}, \"forecast\": [{\"date\": \"2026-11-23\", \"m"
+      }
+    },
+    {
+      "skill": "travel",
+      "scene": "search_flights 正常（北京_上海）",
+      "status": "PASS",
+      "detail": "返回 440 chars",
+      "data": {
+        "preview": "{\"from\": \"北京\", \"to\": \"上海\", \"date\": \"2026-12-01\", \"passengers\": 1, \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据，仅作演示。真实航班查询需要接入 Skyscanner API 或携程开放平"
+      }
+    },
+    {
+      "skill": "travel",
+      "scene": "search_hotels 正常",
+      "status": "PASS",
+      "detail": "返回 365 chars",
+      "data": {
+        "preview": "{\"city\": \"上海\", \"check_in\": \"2026-12-01\", \"check_out\": \"2026-12-03\", \"guests\": 1, \"budget_max\": 500, \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据，仅作演"
+      }
+    },
+    {
+      "skill": "travel",
+      "scene": "search_travel_guide 正常（厦门）",
+      "status": "PASS",
+      "detail": "返回 439 chars",
+      "data": {
+        "preview": "{\"destination\": \"厦门\", \"style\": \"自由行\", \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据，仅作演示。\", \"guides\": [{\"title\": \"厦门 3 天自由行攻略\", \"url\": \"https://mafen"
+      }
+    },
+    {
+      "skill": "stock",
+      "scene": "get_stock_quote 正常（AAPL）",
+      "status": "PASS",
+      "detail": "返回 193 chars",
+      "data": {
+        "preview": "{\"symbol\": \"AAPL\", \"name\": \"Apple Inc.\", \"price\": 215.82, \"change_pct\": 1.23, \"volume\": \"52.3M\", \"market\": \"US\", \"data_source\": \"mock\"}\n\n⚠️ 股市有风险，投资需谨"
+      }
+    },
+    {
+      "skill": "stock",
+      "scene": "⚠️ 风控: 强制风险声明",
+      "status": "PASS",
+      "detail": "返回值必须包含风险声明",
+      "data": "M\", \"market\": \"US\", \"data_source\": \"mock\"}\n\n⚠️ 股市有风险，投资需谨慎。以上信息仅为公开数据整理，不构成任何投资建议。历史表现不代表未来收益，请自行判断。"
+    },
+    {
+      "skill": "stock",
+      "scene": "⚠️ 风控: 无预测/荐股内容",
+      "status": "PASS",
+      "detail": "mock 数据不得含预测/荐股关键词",
+      "data": null
+    },
+    {
+      "skill": "stock",
+      "scene": "get_stock_quote A 股（600519）",
+      "status": "PASS",
+      "detail": "返回 189 chars",
+      "data": {
+        "preview": "{\"symbol\": \"600519\", \"name\": \"贵州茅台\", \"price\": 1728.5, \"change_pct\": -0.85, \"volume\": \"2.1M\", \"market\": \"SH\", \"data_source\": \"mock\"}\n\n⚠️ 股市有风险，投资需谨慎。以上"
+      }
+    },
+    {
+      "skill": "stock",
+      "scene": "⚠️ 风控: A 股同样带风险声明",
+      "status": "PASS",
+      "detail": "",
+      "data": null
+    },
+    {
+      "skill": "stock",
+      "scene": "get_stock_financials 正常",
+      "status": "PASS",
+      "detail": "返回 192 chars",
+      "data": {
+        "preview": "{\"symbol\": \"AAPL\", \"revenue_2024\": \"$391.04B\", \"net_income_2024\": \"$93.74B\", \"roe_2024\": 147.3, \"pe_ttm\": 34.2, \"data_source\": \"mock\"}\n\n⚠️ 股市有风险，投资需谨慎"
+      }
+    },
+    {
+      "skill": "stock",
+      "scene": "⚠️ 风控: 财报带风险声明",
+      "status": "PASS",
+      "detail": "",
+      "data": null
+    },
+    {
+      "skill": "stock",
+      "scene": "⚠️ 风控: 财报无预测字段",
+      "status": "PASS",
+      "detail": "",
+      "data": null
+    },
+    {
+      "skill": "stock",
+      "scene": "get_stock_news 正常",
+      "status": "PASS",
+      "detail": "返回 323 chars",
+      "data": {
+        "preview": "{\"symbol\": \"AAPL\", \"data_source\": \"mock\", \"news\": [{\"title\": \"Apple 发布 Q4 财报，营收同比增长 5%\", \"source\": \"Reuters\", \"date\": \"2026-11-18\"}, {\"title\": \"Apple "
+      }
+    },
+    {
+      "skill": "stock",
+      "scene": "⚠️ 风控: 新闻带风险声明",
+      "status": "PASS",
+      "detail": "",
+      "data": null
+    },
+    {
+      "skill": "stock",
+      "scene": "⚠️ 风控: MOCK_STOCK_QUOTE 无预测字段",
+      "status": "PASS",
+      "detail": "mcp_cfg.MOCK_STOCK_QUOTE 不得含 预测/买入/卖出 等关键词",
+      "data": null
+    },
+    {
+      "skill": "literature",
+      "scene": "search_papers 正常（Attention）",
+      "status": "PASS",
+      "detail": "返回 889 chars",
+      "data": {
+        "preview": "{\"query\": \"attention mechanism\", \"data_source\": \"mock\", \"papers\": [{\"paper_id\": \"649def34f8be52c8b66281af98ae884c09aef38b\", \"title\": \"Attention Is All"
+      }
+    },
+    {
+      "skill": "literature",
+      "scene": "get_paper_detail 正常",
+      "status": "PASS",
+      "detail": "返回 527 chars",
+      "data": {
+        "preview": "{\"paper_id\": \"649def34f8be52c8b66281af98ae884c09aef38b\", \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据。\", \"title\": \"Attention Is All You Need\", \"auth"
+      }
+    },
+    {
+      "skill": "literature",
+      "scene": "get_citation_graph 正常",
+      "status": "PASS",
+      "detail": "返回 298 chars",
+      "data": {
+        "preview": "{\"paper_id\": \"abc123\", \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据。\", \"cited_by\": [{\"paper_id\": \"mock_cite_001\", \"title\": \"Mock 引用了 abc123\", \"autho"
+      }
+    },
+    {
+      "skill": "product",
+      "scene": "compare_products 正常（降噪耳机）",
+      "status": "PASS",
+      "detail": "返回 243 chars",
+      "data": {
+        "preview": "{\"keyword\": \"降噪耳机\", \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据。真实比价需要接入各电商平台开放 API。\", \"products\": [{\"name\": \"降噪耳机（mock 商品）\", \"jd_price\": 999, \"tma"
+      }
+    },
+    {
+      "skill": "product",
+      "scene": "compare_products 正常（MacBook）",
+      "status": "PASS",
+      "detail": "返回 249 chars",
+      "data": {
+        "preview": "{\"keyword\": \"MacBook\", \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据。真实比价需要接入各电商平台开放 API。\", \"products\": [{\"name\": \"MacBook（mock 商品）\", \"jd_price\": 999"
+      }
+    },
+    {
+      "skill": "product",
+      "scene": "get_product_price_history 正常",
+      "status": "PASS",
+      "detail": "返回 1187 chars",
+      "data": {
+        "preview": "{\"product_name\": \"Sony WH-1000XM5\", \"days\": 30, \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据。真实价格历史需要接入电商平台爬虫或开放 API。\", \"history\": [{\"day\": \"day_30\""
+      }
+    },
+    {
+      "skill": "product",
+      "scene": "find_best_deal 正常（耳机品类）",
+      "status": "PASS",
+      "detail": "返回 473 chars",
+      "data": {
+        "preview": "{\"category\": \"耳机\", \"budget_min\": 0, \"budget_max\": 3000.0, \"data_source\": \"mock\", \"note\": \"⚠️ 当前为 mock 数据。真实比价需要接入电商平台开放 API。\", \"recommendations\": [{\"n"
+      }
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool explain_code 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool debug_hint 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool suggest_refactor 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool resume_review 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool mock_interview_question 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool salary_benchmark 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool explain_word 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool read_along_feedback 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool extract_vocabulary 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool summarize_tasks 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool generate_section 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool okr_reflection 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool plan_workout 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool plan_meal 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool track_progress_hint 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool extract_action_items 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool summarize_meeting 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "tool assign_owner 注册到 chat 档",
+      "status": "PASS",
+      "detail": "chat_tools 必须包含此 tool name",
+      "data": null
+    },
+    {
+      "skill": "纯LLM",
+      "scene": "所有 tool name 跨文件唯一",
+      "status": "PASS",
+      "detail": "chat_tools 共 35 个, 去重后 35 个",
+      "data": null
+    },
+    {
+      "skill": "local-knowledge",
+      "scene": "tool 注册到 chat 档",
+      "status": "PASS",
+      "detail": "",
+      "data": null
+    },
+    {
+      "skill": "local-knowledge",
+      "scene": "retriever 模块可 import",
+      "status": "PASS",
+      "detail": "",
+      "data": null
+    },
+    {
+      "skill": "路由",
+      "scene": "market 档只拿校园库（3 个）",
+      "status": "PASS",
+      "detail": "实际: ['search_secondhand_items_tool', 'get_secondhand_detail_tool', 'search_campus_activities']",
+      "data": null
+    },
+    {
+      "skill": "路由",
+      "scene": "doc 档只拿校园库",
+      "status": "PASS",
+      "detail": "实际: ['search_secondhand_items_tool', 'get_secondhand_detail_tool', 'search_campus_activities']",
+      "data": null
+    },
+    {
+      "skill": "路由",
+      "scene": "casual 档只有 web_search",
+      "status": "PASS",
+      "detail": "实际: ['web_search_tool']",
+      "data": null
+    },
+    {
+      "skill": "路由",
+      "scene": "mode=None 退回校园库专用集（非空）",
+      "status": "PASS",
+      "detail": "实际: ['search_secondhand_items_tool', 'get_secondhand_detail_tool', 'search_campus_activities']",
+      "data": null
+    },
+    {
+      "skill": "路由",
+      "scene": "chat 档拿全套（≥30 个）",
+      "status": "PASS",
+      "detail": "实际: 35 个",
+      "data": null
+    },
+    {
+      "skill": "JSON",
+      "scene": "travel.get_weather 返回值 JSON 可解析",
+      "status": "PASS",
+      "detail": "370 chars",
+      "data": null
+    },
+    {
+      "skill": "JSON",
+      "scene": "literature.search_papers 返回值 JSON 可解析",
+      "status": "PASS",
+      "detail": "874 chars",
+      "data": null
+    },
+    {
+      "skill": "JSON",
+      "scene": "product.compare_products 返回值 JSON 可解析",
+      "status": "PASS",
+      "detail": "529 chars",
+      "data": null
+    },
+    {
+      "skill": "JSON",
+      "scene": "stock.get_stock_quote 返回值非空 + 风险声明",
+      "status": "PASS",
+      "detail": "193 chars",
+      "data": null
+    }
+  ]
+}

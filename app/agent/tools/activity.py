@@ -130,6 +130,7 @@ def register(r: "SkillRegistry") -> None:  # noqa: F821
 
     服务 market、activity、doc、chat 四个档位，casual 档不给。
     """
+    from app.agent.skills import SkillRegistry
 
     r.register_tools("market", CAMPUS_SEARCH_TOOLS)
     r.register_tools("activity", CAMPUS_SEARCH_TOOLS)

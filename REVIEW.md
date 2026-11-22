@@ -1,7 +1,33 @@
 # 11 Skill 交付评审文档
 
 > 交付时间：2026-11-22
-> 评审状态：**暂停，等待评审确认**
+> 评审状态：**自检通过，等待最终确认**
+> 自检 commit：`12845df`（修复 travel 死代码 + SKILL.md 排除词 + ruff F401）
+> 全量测试：**41 passed, 0 failed**（最终验证）
+
+---
+
+## 〇、自检记录
+
+### 发现的问题 & 修复
+
+| 严重度 | 问题 | 修复 commit |
+|---|---|---|
+| 🚨 致命 | travel.py 注册到不存在的 "travel" 档 → 死代码（graph.py 只有 5 档：market/activity/doc/chat/casual） | 改为注册到 "chat" 档 |
+| 🚨 严重 | stock.py get_stock_financials 真实分支是假调用（import 了 akshare 但没调任何 ak.* 方法） | 删掉假分支，纯 mock 设计 + 注释说明 |
+| 🚨 严重 | travel.py search_flights / search_hotels 真实分支是空壳 `try: pass except:` | 删掉空壳，纯 mock + 注释说明暂无开放 API |
+| ❌ 功能 | 5 个 SKILL.md 排除词模糊写 "排除：其他" → 渐进式披露边界不清 | english-helper / fitness-diet / meeting-minutes / product-comparison / weekly-report 全部改成具体排除边界 |
+| ⚠️ 清理 | ruff F401 × 10（7 个纯 LLM 文件的 typing.Any + literature.py 的 urllib.parse + stock.py 的 akshare + 3 个已有文件的 SkillRegistry） | `ruff check --fix` 批量修 |
+| ⚠️ 清理 | ruff I001 import 排序 | `ruff check --fix` 修 |
+| ⚠️ 清理 | graph.py tools_for_mode fallback 从 chat 全套 → market 校园库专用集（mode=None 时不该给 chat 全套工具） | 改 fallback 为 market 档工具集 |
+
+### 遗留老问题（非本次引入）
+
+| 问题 | 位置 | 说明 |
+|---|---|---|
+| F841 `store = MemoryStore()` 未使用 | graph.py:471 | `build_graph` 函数里的遗留代码，ruff unsafe fix 才会删 |
+| UP035 Callable 应从 collections.abc import | preprocess.py:13 | Python 3.9+ 标准变更 |
+| F811 campus_search / web_search 重定义 | mcp_server.py:73,83 | 函数名和 import 名冲突（运行时没问题） |
 
 ---
 
