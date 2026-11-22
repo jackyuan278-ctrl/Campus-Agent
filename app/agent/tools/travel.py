@@ -274,6 +274,11 @@ TRAVEL_PROMPT = """你是旅游规划助手，擅长帮用户一键搞定旅行�
 
 
 def register(r: SkillRegistry) -> None:
-    """把旅游工具包注册进 SkillRegistry — 给 chat 档（chat 是通用问答，涵盖旅游）。"""
+    """把旅游工具包注册进 SkillRegistry.
+
+    - "travel" 档：独立档位，只给旅游工具 + 旅游 prompt（前端点"旅游规划"按钮进这里）
+    - "chat" 档：chat 是通用问答，也附带旅游能力（用户在智能问答里自然提到旅游也能调）
+    """
+    r.register_tools("travel", TRAVEL_TOOLS)
+    r.register_prompt("travel", TRAVEL_PROMPT)
     r.register_tools("chat", TRAVEL_TOOLS)
-    r.register_prompt("chat", TRAVEL_PROMPT)
