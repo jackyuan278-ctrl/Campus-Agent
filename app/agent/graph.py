@@ -1,18 +1,16 @@
 """Agent 编排（LangGraph 状态图）——function calling 版。
 
-    START → summarize → image_agent → route → agent ─┬─(要工具)→ tools → agent
-                                                      └─(不要 / 轮数用尽)→ strip_calls → persist → END
+    START → pre → agent ─┬─(tools)→ tools → agent
+                          └─(end)→ strip_calls → [should_summarize?] ─┬─yes → summarize → post → END
+                                                                       └─no  → post → END
 
 各节点职责：
-    summarize   上下文压缩（SummarizationMiddleware）：早期对话 → 一段摘要
-    image_agent 附件处理：图片交视觉模型转文字；文档在向量库里检索相关段落，
-                **所有档位共用**
-    route       算出本轮意图（只用于日志和接口返回）+ 把本轮用户消息
-                （含图片文字）写进 messages
-    agent       调模型。模型可以直接回答，也可以返回 tool_calls 要求调工具
-    tools       ToolNode：执行模型点名的工具，把结果作为 ToolMessage 追加回 messages
+    pre      同步预处理层：附件视觉识别 + summarization + 长文档向量检索 + 写本轮用户消息
+    agent    调模型。模型可以直接回答，也可以返回 tool_calls 要求调工具
+    tools    ToolNode：执行模型点名的工具，把结果作为 ToolMessage 追加回 messages
     strip_calls 收尾前丢弃未执行的 tool_calls（轮数用尽时模型仍可能执意要工具）
-    persist     写 tb_chat_message（业务记录） + 累加当日 token 用量
+    summarize 上下文压缩（SummarizationMiddleware）：早期对话 → 一段摘要（按需触发）
+    post     同步后处理层：持久化 + quota 扣减
 
 档位（mode）决定两件事，都发生在装配阶段，**与这句话说了什么无关**：
     tools_for_mode   给哪些工具（本地三个恒给；联网只给 casual）
@@ -48,6 +46,8 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from app.agent.postprocess import postprocess as _postprocess
+from app.agent.preprocess import preprocess as _preprocess
 from app.agent.skills import registry
 from app.agent.state import INTENT_CASUAL, AgentState, infer_intent
 from app.common import clock
@@ -534,188 +534,54 @@ def build_graph(checkpointer=None):
             logger.exception("附件摘要失败（长度=%d），跳过", len(content))
         return None
 
-    async def image_agent(state: AgentState) -> dict[str, Any]:
-        """附件处理节点：所有档位都会先经过这里。
-
-        三类附件走三条路：
-            图片  → 视觉模型转文字（一次最多 MAX_IMAGES 张，每张一次调用）
-            文档  → 在 Milvus Lite 里按这次提问检索相关段落，只带回 top 4 块
-            其它  → 明确告诉模型「处理不了」，不让它对着文件名瞎猜
-
-        单张图 / 单份文档失败只降级成一行说明，不让整轮对话挂掉。
-
-        ⚠️ 没有新附件时必须显式清空 attachment_text / vision_tokens：
-        checkpointer 会把上一轮的值留在状态里，不清的话它会拼进之后**每一轮**
-        的提问（表现为「换了话题它还在说那张图」），配额也会重复计。
-        """
-        attachments = state.get("attachments") or []
-        images: list[dict[str, Any]] = []
-        documents: list[dict[str, Any]] = []
-        unsupported: list[dict[str, Any]] = []
-        for item in attachments:
-            if _looks_like_image(item) and item.get("url"):
-                images.append(item)
-            elif item.get("url") and is_document(
-                str(item.get("type") or ""), str(item.get("name") or "")
-            ):
-                documents.append(item)
-            else:
-                unsupported.append(item)
-
-        blocks: list[str] = []
-        update: dict[str, Any] = {}
-
-        # 本轮带了文档 → 记住地址，供之后几轮追问重新检索（一份文档几十字节）
-        if documents:
-            update["doc_urls"] = [
-                {"name": str(d.get("name") or "文档"), "url": str(d.get("url"))} for d in documents
-            ]
-        elif not attachments and state.get("mode") == "doc":
-            # 本轮没带附件，但会话里之前传过文档 → 用这次的问题重新检索一遍。
-            # 为什么需要这一步：附件正文不再写进对话历史（见 route 里的说明），
-            # 所以「追问」必须靠这里补上下文，否则用户问「第 2 章讲了什么」会失忆。
-            # 代价只有 1 次 query embedding，比每轮重发 1000 token 便宜得多。
-            stored = state.get("doc_urls") or []
-            if stored:
-                documents = stored
-                logger.info("doc 档追问：复用会话内 %d 份文档重新检索", len(stored))
-
-        # 文档：短于 _DOC_SHORT_CHARS 直接全文注入 + summarization 进 history；
-        # 超过就走向量检索 top 4 块（与之前逻辑一致）。
-        # 追问复用的文档（来自上一轮 doc_urls）跳过 summarization——上次已经做过了。
-        doc_summaries: list[str] = []
-        if documents:
-            prev_urls = {str(d.get("url")) for d in (state.get("doc_urls") or [])}
-            new_urls = {
-                str(d.get("url"))
-                for d in (update.get("doc_urls") or [])
-                if str(d.get("url")) not in prev_urls
-            }
-            for doc in documents:
-                url = str(doc.get("url"))
-                name = str(doc.get("name") or "文档")
-                try:
-                    chunks = await get_all_chunks(url)
-                except Exception:
-                    logger.exception("短文档检查失败：%s", name)
-                    chunks = []
-                if chunks:
-                    full_text = "\n\n".join(chunks)
-                    if len(full_text) < _DOC_SHORT_CHARS:
-                        # 短文档：全文当轮注入（比向量检索 4 块不丢上下文）
-                        blocks.append(f"- {name} 全文：\n{full_text}")
-                        # 新上传的做 summarization 进 history（追问复用的已做过）
-                        if url in new_urls:
-                            summary = await _summarize_attachment(full_text)
-                            if summary:
-                                doc_summaries.append(f"{_ATTACHMENT_SUMMARY_PREFIX}{summary}")
-                            elif len(full_text.strip()) >= _ATTACHMENT_SUMMARY_MIN_CHARS:
-                                doc_summaries.append(
-                                    f"{_ATTACHMENT_SUMMARY_PREFIX}{full_text[:_ATTACHMENT_SUMMARY_MAX_CHARS]}"
-                                )
-                    else:
-                        # 长文档：向量检索（和之前一致）
-                        blocks.extend(await _document_blocks([doc], state.get("query") or ""))
-                else:
-                    # Milvus 里没这份文档的 chunks——可能索引还没建好（ race condition：
-                    # 上传 → 对话几乎同时发生），退回到向量检索让它自己报"没检到"
-                    blocks.extend(await _document_blocks([doc], state.get("query") or ""))
-
-        if unsupported:
-            # 明确告诉模型"这些附件处理不了"，而不是让它对着一堆文件名瞎猜
-            names = "、".join(str(s.get("name") or "未知文件") for s in unsupported)
-            blocks.append(f"（附件 {names} 暂不支持解析，如被问到请如实说明）")
-            if any(not s.get("url") for s in unsupported):
-                logger.warning(
-                    "image_agent：附件缺 url（前端未走 /assistant/upload？）：%s",
-                    [{"name": s.get("name"), "type": s.get("type")} for s in unsupported],
-                )
-
-        if not images:
-            update["attachment_text"] = "\n".join(blocks)
-            update["vision_tokens"] = 0
-            return update
-
-        # 超出上限的图片明确说明，而不是静默丢掉
-        overflow = images[MAX_IMAGES:]
-        images = images[:MAX_IMAGES]
-        if overflow:
-            names = "、".join(str(o.get("name") or "图片") for o in overflow)
-            blocks.append(f"（图片 {names} 超出单轮 {MAX_IMAGES} 张上限，本轮未读取）")
-
-        results = await asyncio.gather(
-            *(describe_image(item["url"]) for item in images), return_exceptions=True
+    async def pre(state: AgentState) -> dict[str, Any]:
+        """同步预处理层：附件识别 + summarization + 写本轮用户消息。"""
+        # 把 graph.py 模块上的依赖传入 preprocess——这样测试 monkeypatch
+        # graph_module.describe_image / embed_query 等符号时可以生效
+        new_state = await _preprocess(
+            state,
+            describe_image=describe_image,
+            get_all_chunks=get_all_chunks,
+            is_document=is_document,
+            embed_query=embed_query,
+            search_chunks=search_chunks,
+            get_chat_model=get_chat_model,
         )
 
-        vision_tokens = 0
-        image_summaries: list[str] = []
-        for item, result in zip(images, results, strict=True):
-            name = item.get("name") or "图片"
-            if isinstance(result, BaseException):
-                logger.warning("图片识别失败：%s（%s）", name, result)
-                blocks.append(f"- {name}：识别失败，未获取到内容")
-                continue
-            text, tokens = result
-            vision_tokens += tokens
-            if not text:
-                blocks.append(f"- {name}：没有识别到可用内容")
-            else:
-                blocks.append(f"- {name}：\n{text}")
-                # 图片正文同时做 summarization，进 history 供后续追问使用
-                summary = await _summarize_attachment(text)
-                if summary:
-                    image_summaries.append(f"{_ATTACHMENT_SUMMARY_PREFIX}{summary}")
-                elif len(text) < _ATTACHMENT_SUMMARY_MIN_CHARS and text.strip():
-                    # 太短跳过压缩但也要进 history（否则追问失忆）
-                    image_summaries.append(
-                        f"{_ATTACHMENT_SUMMARY_PREFIX}{text[:_ATTACHMENT_SUMMARY_MAX_CHARS]}"
-                    )
+        # 补 route 的功能：写本轮用户消息 + 初始化 tool_rounds / turn_tokens
+        content = new_state.get("query") or "请看看我发的附件"
+        intent = (
+            INTENT_CASUAL
+            if (new_state.get("mode") or "") == INTENT_CASUAL
+            else infer_intent(new_state.get("query", ""))
+        )
 
-        update["attachment_text"] = "\n".join(blocks)
-        update["vision_tokens"] = vision_tokens
-        all_summaries = [*image_summaries, *doc_summaries]
-        if all_summaries:
-            # 把摘要以 HumanMessage 形式写进 history —— checkpointer 自然持久化
-            # 追问时 history 里带着，模型记得用户发过什么图/什么文档
-            update["messages"] = [HumanMessage(content="\n".join(all_summaries))]
-            logger.info(
-                "附件摘要已进 history：图片 %d 张 + 文档 %d 份",
-                len(image_summaries),
-                len(doc_summaries),
-            )
-        return update
+        # 把 preprocess 的 attachment_text / vision_tokens / doc_urls 等字段透传
+        # （除了 messages，我们自己组装了摘要 + 本轮用户消息）
+        result: dict[str, Any] = {
+            "intent": intent,
+            "tool_rounds": 0,
+            # 识图已经花掉的 token 先记上，agent 节点再往上累加
+            "turn_tokens": new_state.get("vision_tokens", 0),
+        }
+        for key in ("attachment_text", "vision_tokens", "doc_urls"):
+            if key in new_state:
+                result[key] = new_state[key]
 
-    async def route(state: AgentState) -> dict[str, Any]:
-        """写本轮用户消息 + 记录意图。
-
-        意图现在只用来打日志和填 chat.py 的响应字段，**不再决定工具集和提示词**
-        ——工具和 prompt 都由 mode 决定（见 tools_for_mode / prompt_for_mode）。
-        查什么由模型通过 tool_calls 决定。
-        """
-        mode = state.get("mode") or ""
-        # intent 只用于日志和 chat.py 的响应字段，**不参与工具集和 prompt 的选择**。
-        # 保留它是为了让排查问题时还能看到「这句话被认成什么意图」。
-        intent = INTENT_CASUAL if mode == INTENT_CASUAL else infer_intent(state.get("query", ""))
-
-        content = state.get("query") or "请看看我发的附件"
-        # 附件正文**不**拼进 HumanMessage。拼进去它会随 checkpointer 永久留在历史里，
-        # 之后每一轮都重发（4 块 ≈1000 token），摘要也会把这些段落反复咀嚼一遍。
-        # 改为在 agent 节点临时拼到消息副本上（见 _with_attachments），只进当轮 prompt。
-
+        # 把 preprocess 返回的 messages（附件摘要）放在前面，再追加本轮用户消息
+        messages: list = []
+        if new_state.get("messages"):
+            messages.extend(new_state["messages"])
+        messages.append(HumanMessage(content=content))
+        result["messages"] = messages
         logger.info(
-            "route：thread=%s mode=%s intent=%s 附件=%d",
+            "pre：thread=%s mode=%s intent=%s 附件=%d",
             state.get("thread_id"),
             state.get("mode"),
             intent,
             len(state.get("attachments") or []),
         )
-        return {
-            "intent": intent,
-            "messages": [HumanMessage(content=content)],
-            "tool_rounds": 0,
-            # 识图已经花掉的 token 先记上，agent 节点再往上累加
-            "turn_tokens": state.get("vision_tokens", 0),
-        }
+        return result
 
     async def agent(state: AgentState) -> dict[str, Any]:
         """调模型：要么直接回答，要么返回 tool_calls 要求调工具。"""
@@ -762,7 +628,7 @@ def build_graph(checkpointer=None):
         """收尾前清理未执行的 tool_calls。
 
         模型跑满 MAX_TOOL_ROUNDS 仍执意要工具时，should_use_tools 会直接跳去
-        persist，这些 tool_calls 永远不会被执行。如果带着它们落进 checkpointer，
+        结束路径，这些 tool_calls 永远不会被执行。如果带着它们落进 checkpointer，
         下一轮把历史发给上游（OpenAI 兼容协议）会因「assistant 带 tool_calls
         却没有配对的 ToolMessage」判 400，整个会话从此卡死。
         """
@@ -782,28 +648,14 @@ def build_graph(checkpointer=None):
             "answer": text,
         }
 
-    async def persist(state: AgentState) -> dict[str, Any]:
-        """写业务记录（可读版） + 累加当日 token 用量。"""
-        thread_id = state.get("thread_id")
-        if thread_id:
-            await store.append(thread_id, "user", state.get("query", ""))
-            await store.append(thread_id, "assistant", state.get("answer", ""))
-        user_key = state.get("user_key")
-        if user_key:
-            try:
-                await add_usage(user_key, state.get("turn_tokens", 0))
-            except Exception:
-                logger.exception("写入 token 用量失败（%s）", user_key)
-        return {}
-
     def should_use_tools(state: AgentState) -> str:
         """有 tool_calls 且还有轮数和 token 预算就执行工具，否则收尾。"""
         last = (state.get("messages") or [None])[-1]
         calls = getattr(last, "tool_calls", None) or []
         if not calls:
-            return "persist"
+            return "end"
         if state.get("tool_rounds", 0) >= MAX_TOOL_ROUNDS:
-            return "persist"
+            return "end"
         if state.get("turn_tokens", 0) >= MAX_TURN_TOKENS:
             # 单轮 token 用超了：日配额管得住总量，管不住一轮烧穿。
             # 这时候继续给工具只会越滚越大，让它用已有信息收尾。
@@ -812,32 +664,53 @@ def build_graph(checkpointer=None):
                 state.get("turn_tokens", 0),
                 MAX_TURN_TOKENS,
             )
-            return "persist"
+            return "end"
         return "tools"
 
+    def should_summarize_then_post(state: AgentState) -> str:
+        """收尾条件：消息超阈值就先走 summarize 压缩，再进 post。"""
+        messages = state.get("messages") or []
+        try:
+            token_count = count_tokens_approximately(messages)
+        except Exception:  # noqa: BLE001
+            token_count = 0
+        need_summary = (
+            token_count >= PROMPT_MAX_TOKENS - PROMPT_SAFE_MARGIN
+            or len(messages) >= CHAT_SUMMARY_TRIGGER
+        )
+        return "summarize" if need_summary else "post"
+
+    async def post(state: AgentState) -> dict[str, Any]:
+        """同步后处理层：持久化 + quota 扣减。"""
+        # 用 graph.py 模块上的 MemoryStore（测试 monkeypatch graph_module.MemoryStore 时生效）
+        await _postprocess(state, _store=MemoryStore())
+        return {}
+
     graph = StateGraph(AgentState)
-    graph.add_node("summarize", summarize)
-    graph.add_node("image_agent", image_agent)
-    graph.add_node("route", route)
+    graph.add_node("pre", pre)
     graph.add_node("agent", agent)
+    graph.add_node("summarize", summarize)
     graph.add_node(
         "tools", ToolNode(registry.get_all_tools(), handle_tool_errors=_handle_tool_error)
     )
     graph.add_node("strip_calls", strip_calls)
-    graph.add_node("persist", persist)
+    graph.add_node("post", post)
 
-    graph.add_edge(START, "summarize")
-    graph.add_edge("summarize", "image_agent")
-    graph.add_edge("image_agent", "route")
-    graph.add_edge("route", "agent")
+    graph.add_edge(START, "pre")
+    graph.add_edge("pre", "agent")
     graph.add_conditional_edges(
         "agent",
         should_use_tools,
-        {"tools": "tools", "persist": "strip_calls"},
+        {"tools": "tools", "end": "strip_calls"},
     )
     graph.add_edge("tools", "agent")
-    graph.add_edge("strip_calls", "persist")
-    graph.add_edge("persist", END)
+    graph.add_conditional_edges(
+        "strip_calls",
+        should_summarize_then_post,
+        {"summarize": "summarize", "post": "post"},
+    )
+    graph.add_edge("summarize", "post")
+    graph.add_edge("post", END)
 
     return graph.compile(checkpointer=checkpointer)
 
