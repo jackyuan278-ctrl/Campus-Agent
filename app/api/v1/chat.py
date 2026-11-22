@@ -110,18 +110,22 @@ async def chat(
 
                     # --- 工具调用事件（ToolNode 执行时发出）---
                     if evt == "on_tool_start" and node == "tools":
-                        yield _sse({
-                            "tool_call": {
-                                "name": event.get("name", "unknown"),
-                                "arguments": event.get("data", {}).get("input", {}),
+                        yield _sse(
+                            {
+                                "tool_call": {
+                                    "name": event.get("name", "unknown"),
+                                    "arguments": event.get("data", {}).get("input", {}),
+                                }
                             }
-                        })
+                        )
                     elif evt == "on_tool_end" and node == "tools":
-                        yield _sse({
-                            "tool_result": {
-                                "name": event.get("name", "unknown"),
+                        yield _sse(
+                            {
+                                "tool_result": {
+                                    "name": event.get("name", "unknown"),
+                                }
                             }
-                        })
+                        )
                     # --- 模型文本增量（agent 节点）---
                     elif evt == "on_chat_model_stream":
                         if node != "agent":

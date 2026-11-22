@@ -87,22 +87,70 @@ MOCK_HOTELS: list[dict[str, Any]] = [
 
 MOCK_GUIDES: dict[str, Any] = {
     "厦门": [
-        {"title": "厦门 3 天自由行攻略", "url": "https://mafengwo.cn/example", "content": "Day1：鼓浪屿 → 三丘田码头上船...", "score": 4.9},
-        {"title": "厦门必吃美食 Top 10", "url": "https://xiaohongshu.com/example", "content": "沙茶面、海蛎煎、土笋冻...", "score": 4.8},
-        {"title": "厦门交通指南", "url": "https://zhihu.com/example", "content": "厦门地铁 1/2/3 号线覆盖主要景点...", "score": 4.5},
+        {
+            "title": "厦门 3 天自由行攻略",
+            "url": "https://mafengwo.cn/example",
+            "content": "Day1：鼓浪屿 → 三丘田码头上船...",
+            "score": 4.9,
+        },
+        {
+            "title": "厦门必吃美食 Top 10",
+            "url": "https://xiaohongshu.com/example",
+            "content": "沙茶面、海蛎煎、土笋冻...",
+            "score": 4.8,
+        },
+        {
+            "title": "厦门交通指南",
+            "url": "https://zhihu.com/example",
+            "content": "厦门地铁 1/2/3 号线覆盖主要景点...",
+            "score": 4.5,
+        },
     ],
 }
 
 # ⚠️ 风控：mock stock 数据里**绝对不能出现**预测/荐股/买卖建议
 MOCK_STOCK_QUOTE: dict[str, Any] = {
-    "AAPL": {"symbol": "AAPL", "name": "Apple Inc.", "price": 215.82, "change_pct": 1.23, "volume": "52.3M", "market": "US"},
-    "600519": {"symbol": "600519", "name": "贵州茅台", "price": 1728.50, "change_pct": -0.85, "volume": "2.1M", "market": "SH"},
-    "000001": {"symbol": "000001", "name": "平安银行", "price": 11.35, "change_pct": 0.53, "volume": "85.6M", "market": "SZ"},
+    "AAPL": {
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "price": 215.82,
+        "change_pct": 1.23,
+        "volume": "52.3M",
+        "market": "US",
+    },
+    "600519": {
+        "symbol": "600519",
+        "name": "贵州茅台",
+        "price": 1728.50,
+        "change_pct": -0.85,
+        "volume": "2.1M",
+        "market": "SH",
+    },
+    "000001": {
+        "symbol": "000001",
+        "name": "平安银行",
+        "price": 11.35,
+        "change_pct": 0.53,
+        "volume": "85.6M",
+        "market": "SZ",
+    },
 }
 
 MOCK_STOCK_FINANCIALS: dict[str, Any] = {
-    "AAPL": {"symbol": "AAPL", "revenue_2024": "$391.04B", "net_income_2024": "$93.74B", "roe_2024": 147.3, "pe_ttm": 34.2},
-    "600519": {"symbol": "600519", "revenue_2024": "1585亿元", "net_income_2024": "763亿元", "roe_2024": 32.5, "pe_ttm": 28.1},
+    "AAPL": {
+        "symbol": "AAPL",
+        "revenue_2024": "$391.04B",
+        "net_income_2024": "$93.74B",
+        "roe_2024": 147.3,
+        "pe_ttm": 34.2,
+    },
+    "600519": {
+        "symbol": "600519",
+        "revenue_2024": "1585亿元",
+        "net_income_2024": "763亿元",
+        "roe_2024": 32.5,
+        "pe_ttm": 28.1,
+    },
 }
 
 MOCK_STOCK_NEWS: dict[str, Any] = {
@@ -123,7 +171,16 @@ MOCK_PAPERS: list[dict[str, Any]] = [
     {
         "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
         "title": "Attention Is All You Need",
-        "authors": ["Ashish Vaswani", "Noam Shazeer", "Niki Parmar", "Jakob Uszkoreit", "Llion Jones", "Aidan N. Gomez", "Łukasz Kaiser", "Illia Polosukhin"],
+        "authors": [
+            "Ashish Vaswani",
+            "Noam Shazeer",
+            "Niki Parmar",
+            "Jakob Uszkoreit",
+            "Llion Jones",
+            "Aidan N. Gomez",
+            "Łukasz Kaiser",
+            "Illia Polosukhin",
+        ],
         "year": 2017,
         "venue": "NeurIPS",
         "citation_count": 128432,
@@ -142,12 +199,42 @@ MOCK_PAPERS: list[dict[str, Any]] = [
 
 MOCK_PRODUCTS: dict[str, Any] = {
     "耳机_降噪": [
-        {"name": "Sony WH-1000XM5", "jd_price": 2499, "tmall_price": 2399, "pdd_price": 2299, "rating": 4.9},
-        {"name": "Bose QC45", "jd_price": 2299, "tmall_price": 2199, "pdd_price": 2099, "rating": 4.8},
-        {"name": "AirPods Max", "jd_price": 4299, "tmall_price": 4199, "pdd_price": 4099, "rating": 4.7},
+        {
+            "name": "Sony WH-1000XM5",
+            "jd_price": 2499,
+            "tmall_price": 2399,
+            "pdd_price": 2299,
+            "rating": 4.9,
+        },
+        {
+            "name": "Bose QC45",
+            "jd_price": 2299,
+            "tmall_price": 2199,
+            "pdd_price": 2099,
+            "rating": 4.8,
+        },
+        {
+            "name": "AirPods Max",
+            "jd_price": 4299,
+            "tmall_price": 4199,
+            "pdd_price": 4099,
+            "rating": 4.7,
+        },
     ],
     "笔记本": [
-        {"name": "MacBook Pro 14 M3 Pro", "jd_price": 14999, "tmall_price": 14799, "pdd_price": 14599, "rating": 4.9},
-        {"name": "联想 ThinkPad X1 Carbon", "jd_price": 12999, "tmall_price": 12799, "pdd_price": 12599, "rating": 4.7},
+        {
+            "name": "MacBook Pro 14 M3 Pro",
+            "jd_price": 14999,
+            "tmall_price": 14799,
+            "pdd_price": 14599,
+            "rating": 4.9,
+        },
+        {
+            "name": "联想 ThinkPad X1 Carbon",
+            "jd_price": 12999,
+            "tmall_price": 12799,
+            "pdd_price": 12599,
+            "rating": 4.7,
+        },
     ],
 }

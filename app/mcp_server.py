@@ -24,9 +24,14 @@ os.environ.setdefault("APP_LOG_LEVEL", "INFO")
 
 from mcp.server.fastmcp import FastMCP
 
-from app.agent.tools.activity import campus_search, search_campus_activities
+from app.agent.tools.activity import (
+    campus_search as _campus_search_impl,
+)
+from app.agent.tools.activity import (
+    search_campus_activities,
+)
 from app.agent.tools.secondhand import search_secondhand_items
-from app.agent.tools.web import web_search
+from app.agent.tools.web import web_search as _web_search_impl
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,9 +51,7 @@ mcp = FastMCP(
 @mcp.tool()
 def search_secondhand(keyword: str, page: int = 1, page_size: int = 10) -> str:
     """查询校园二手市场。按关键词模糊匹配商品名称/描述/分类。只返回在售商品。"""
-    result = asyncio.run(
-        search_secondhand_items(keyword=keyword, page=page, page_size=page_size)
-    )
+    result = asyncio.run(search_secondhand_items(keyword=keyword, page=page, page_size=page_size))
     return _to_text(result)
 
 
@@ -63,16 +66,14 @@ def search_activities(time_range: str = "最近一周", location: str = "") -> s
         time_range: 时间窗，如「今天」「本周」「本月」「最近三天」。
         location: 可选地点关键词，如「图书馆」「操场」。
     """
-    result = asyncio.run(
-        search_campus_activities(time_range=time_range, location=location or None)
-    )
+    result = asyncio.run(search_campus_activities(time_range=time_range, location=location or None))
     return _to_text(result)
 
 
 @mcp.tool()
 def campus_search(query: str) -> str:
     """校园知识库搜索：覆盖二手、活动、社区帖子、常见问题。"""
-    result = asyncio.run(campus_search(query=query))
+    result = asyncio.run(_campus_search_impl(query=query))
     return _to_text(result)
 
 
@@ -82,7 +83,7 @@ def campus_search(query: str) -> str:
 @mcp.tool()
 def web_search(query: str, max_results: int = 5) -> str:
     """联网搜索（Tavily）。适合查「XX 怎么办」「最新 XX 资讯」这类校园库覆盖不到的问题。"""
-    result = asyncio.run(web_search(query=query, max_results=max_results))
+    result = asyncio.run(_web_search_impl(query=query, max_results=max_results))
     return _to_text(result)
 
 

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # ── 1. 商品比价 ───────────────────────────────────────────────────
 
+
 @tool
 async def compare_products(keyword: str, top_k: int = 5) -> str:
     """按关键词搜索同款商品并对比多平台价格（京东/天猫/拼多多）。
@@ -67,6 +68,7 @@ async def compare_products(keyword: str, top_k: int = 5) -> str:
 
 # ── 2. 价格历史（纯 mock）────────────────────────────────────────
 
+
 @tool
 async def get_product_price_history(product_name: str, days: int = 30) -> str:
     """查询商品近期价格走势。
@@ -100,6 +102,7 @@ async def get_product_price_history(product_name: str, days: int = 30) -> str:
 
 # ── 3. 最优购买时机（纯 mock）────────────────────────────────────
 
+
 @tool
 async def find_best_deal(category: str, budget_min: float = 0, budget_max: float = 99999) -> str:
     """按品类推荐当前最划算的商品。
@@ -116,8 +119,11 @@ async def find_best_deal(category: str, budget_min: float = 0, budget_max: float
 
     # 按预算过滤
     filtered = [
-        p for p in matched
-        if budget_min <= min(p.get("jd_price", 0), p.get("tmall_price", 0), p.get("pdd_price", 0)) <= budget_max
+        p
+        for p in matched
+        if budget_min
+        <= min(p.get("jd_price", 0), p.get("tmall_price", 0), p.get("pdd_price", 0))
+        <= budget_max
     ]
 
     if not filtered:

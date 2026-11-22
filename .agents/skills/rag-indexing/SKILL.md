@@ -47,6 +47,7 @@ uv run python .agents/skills/campus-agent/scripts/index_stats.py
 
 ```python
 from app.rag.doc_store import doc_store
+
 chunks = doc_store.get_all_chunks(file_url="https://oss.xxx.com/foo.pdf")
 # 返回该文件的所有切块，字段包含 text / page / block_type
 ```

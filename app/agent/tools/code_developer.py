@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # ── 1. 代码解释 ───────────────────────────────────────────────────
 
+
 @tool
 async def explain_code(code: str, language: str = "auto", focus: str = "整体逻辑") -> str:
     """让 LLM 解释一段代码的含义。
@@ -44,6 +45,7 @@ async def explain_code(code: str, language: str = "auto", focus: str = "整体�
 
 # ── 2. 调试思路 ───────────────────────────────────────────────────
 
+
 @tool
 async def debug_hint(error: str, code: str = "", context: str = "") -> str:
     """根据报错信息给调试思路。
@@ -67,6 +69,7 @@ async def debug_hint(error: str, code: str = "", context: str = "") -> str:
 
 
 # ── 3. 重构建议 ────────────────────────────────────────────────────
+
 
 @tool
 async def suggest_refactor(code: str, goal: str = "可读性", language: str = "auto") -> str:

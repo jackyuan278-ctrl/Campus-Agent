@@ -468,7 +468,7 @@ def build_graph(checkpointer=None):
         checkpointer: LangGraph 的 saver（AIOMySQLSaver）。传 None 则状态不落盘，
                       仅用于单元测试。
     """
-    store = MemoryStore()
+    MemoryStore()
     model = get_chat_model()
     # 摘要用独立实例：温度 0。只在触发压缩时才会真的调一次模型。
     # max_tokens 给足 1500：glm-5.3-flash 强制思考，预算太小会被推理吃光、
@@ -626,11 +626,13 @@ def build_graph(checkpointer=None):
                     break
             # 反馈 ToolRouter：成功
             tool_router.record_success(tool_name)
-            prev_events.append({
-                "type": "function_call_output",
-                "name": tool_name,
-                "output": str(tool_msg.content)[:2000],  # 截断防爆
-            })
+            prev_events.append(
+                {
+                    "type": "function_call_output",
+                    "name": tool_name,
+                    "output": str(tool_msg.content)[:2000],  # 截断防爆
+                }
+            )
 
         # 三段 SystemMessage：固定前缀（永远第一 → 缓存命中）+ 档位人设（随 mode 变）
         # + 当前时间（每轮变）。历史和附件在后面，保证前缀稳定。
@@ -652,11 +654,13 @@ def build_graph(checkpointer=None):
             )
             # 记录这次 tool_call 到 tool_events
             for call in calls:
-                prev_events.append({
-                    "type": "function_call",
-                    "name": call.get("name", "unknown"),
-                    "arguments": call.get("args") or {},
-                })
+                prev_events.append(
+                    {
+                        "type": "function_call",
+                        "name": call.get("name", "unknown"),
+                        "arguments": call.get("args") or {},
+                    }
+                )
         return {
             "messages": [resp],
             "answer": resp.content or "",
@@ -761,20 +765,20 @@ def build_graph(checkpointer=None):
 # 加新功能只需这里多一行 xxx.register(registry)，内部代码不动。
 from app.agent.tools import (  # noqa: E402 - 放在末尾避免循环 import
     activity,
-    secondhand,
-    stock,
-    literature,
-    product,
-    travel,
-    web,
     # 纯 LLM 类 skills
     code_developer,
-    interview,
     english_helper,
-    weekly_report,
     fitness,
-    meeting_minutes,
+    interview,
+    literature,
     local_knowledge,
+    meeting_minutes,
+    product,
+    secondhand,
+    stock,
+    travel,
+    web,
+    weekly_report,
 )
 
 secondhand.register(registry)

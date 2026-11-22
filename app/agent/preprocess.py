@@ -128,21 +128,27 @@ async def preprocess(
     # ---- 默认依赖 ----
     if describe_image is None:
         from app.llm.vision import describe_image as _describe_image
+
         describe_image = _describe_image
     if get_all_chunks is None:
         from app.rag.doc_store import get_all_chunks as _get_all_chunks
+
         get_all_chunks = _get_all_chunks
     if is_document is None:
         from app.rag.doc_ingest import is_document as _is_document
+
         is_document = _is_document
     if embed_query is None:
         from app.rag.embedding import embed_query as _embed_query
+
         embed_query = _embed_query
     if search_chunks is None:
         from app.rag.doc_store import search_chunks as _search_chunks
+
         search_chunks = _search_chunks
     if get_chat_model is None:
         from app.llm.gateway import get_chat_model as _get_chat_model
+
         get_chat_model = _get_chat_model
 
     attachments = state.get("attachments") or []
@@ -179,9 +185,7 @@ async def preprocess(
 
     # 区分「本轮新上传的文档」和「追问复用的旧文档」
     prev_urls = {str(d.get("url")) for d in (state.get("doc_urls") or [])}
-    new_urls_set = {
-        str(d.get("url")) for d in new_doc_urls if str(d.get("url")) not in prev_urls
-    }
+    new_urls_set = {str(d.get("url")) for d in new_doc_urls if str(d.get("url")) not in prev_urls}
 
     for doc in documents:
         url = str(doc.get("url"))
@@ -214,7 +218,9 @@ async def preprocess(
             else:
                 # 长文档：向量检索 top 4 块
                 blocks.extend(
-                    await _document_blocks([doc], state.get("query") or "", embed_query, search_chunks)
+                    await _document_blocks(
+                        [doc], state.get("query") or "", embed_query, search_chunks
+                    )
                 )
         else:
             # Milvus 里没这份文档的 chunks —— 退回到向量检索让它自己报"没检到"

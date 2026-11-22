@@ -160,9 +160,9 @@ Content-Type: `text/event-stream`
 # chat.py 和 responses.py 都有这段逻辑
 async for event in graph.astream_events(inputs, config, version="v2"):
     if event["event"] != "on_chat_model_stream":
-        continue                              # 跳过 tool_start / tool_end 等
+        continue  # 跳过 tool_start / tool_end 等
     if (event.get("metadata") or {}).get("langgraph_node") != "agent":
-        continue                              # 跳过 summarize 节点的模型调用
+        continue  # 跳过 summarize 节点的模型调用
     text = getattr(event["data"].get("chunk"), "content", "") or ""
     if text:
         yield _sse({"delta": text})

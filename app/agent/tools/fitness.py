@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # ── 1. 训练计划 ────────────────────────────────────────────────────
 
+
 @tool
 async def plan_workout(
     goal: str,
@@ -57,6 +58,7 @@ async def plan_workout(
 
 # ── 2. 饮食计划 ────────────────────────────────────────────────────
 
+
 @tool
 async def plan_meal(
     goal: str,
@@ -94,6 +96,7 @@ async def plan_meal(
 
 
 # ── 3. 打卡追踪建议 ────────────────────────────────────────────────
+
 
 @tool
 async def track_progress_hint(

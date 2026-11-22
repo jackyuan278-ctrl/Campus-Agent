@@ -62,9 +62,7 @@ async def postprocess(state: AgentState, extras: dict | None = None, *, _store=N
             await store.append(thread_id, "assistant", state.get("answer", ""))
         except Exception:
             # 对话已经完成了，落库失败不能让请求 500。记日志让运维排查。
-            logger.exception(
-                "业务记录落库失败（thread=%s）", thread_id
-            )
+            logger.exception("业务记录落库失败（thread=%s）", thread_id)
 
     # ---------- 3. 配额扣减（tb_token_usage 累加）----------
     # 从 graph.py persist 节点原样复制：turn_tokens 已含 vision_tokens。

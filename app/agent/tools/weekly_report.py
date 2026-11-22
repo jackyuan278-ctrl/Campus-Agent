@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # ── 1. 任务列表 → 周报摘要 ────────────────────────────────────────
 
+
 @tool
 async def summarize_tasks(task_list: str, highlight_count: int = 3) -> str:
     """从任务列表生成周报摘要。
@@ -43,6 +44,7 @@ async def summarize_tasks(task_list: str, highlight_count: int = 3) -> str:
 
 
 # ── 2. 周报章节生成 ────────────────────────────────────────────────
+
 
 @tool
 async def generate_section(
@@ -74,6 +76,7 @@ async def generate_section(
 
 
 # ── 3. OKR 复盘 ────────────────────────────────────────────────────
+
 
 @tool
 async def okr_reflection(

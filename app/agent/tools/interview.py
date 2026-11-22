@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 
 # ── 1. 简历评审 ───────────────────────────────────────────────────
 
+
 @tool
-async def resume_review(resume_text: str, target_position: str = "", focus: str = "综合评估") -> str:
+async def resume_review(
+    resume_text: str, target_position: str = "", focus: str = "综合评估"
+) -> str:
     """对简历打分并给出改进建议。
 
     Args:
@@ -45,6 +48,7 @@ async def resume_review(resume_text: str, target_position: str = "", focus: str 
 
 
 # ── 2. 模拟面试题 ──────────────────────────────────────────────────
+
 
 @tool
 async def mock_interview_question(
@@ -79,6 +83,7 @@ async def mock_interview_question(
 
 
 # ── 3. 薪资基准 ────────────────────────────────────────────────────
+
 
 @tool
 async def salary_benchmark(position: str, city: str = "北京", years_experience: int = 3) -> str:

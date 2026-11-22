@@ -25,6 +25,7 @@ _BASE_URL = "https://api.semanticscholar.org/graph/v1"
 
 # ── 通用 helper ────────────────────────────────────────────────────
 
+
 def _s2_headers() -> dict[str, str]:
     """Semantic Scholar API key 可选：有就带上，没有也能用（限流更严）。"""
     if mcp_cfg.SEMANTIC_SCHOLAR_API_KEY:
@@ -47,6 +48,7 @@ async def _s2_get(path: str, params: dict[str, Any]) -> dict[str, Any] | None:
 
 # ── 1. 论文搜索 ─────────────────────────────────────────────────────
 
+
 @tool
 async def search_papers(query: str, limit: int = 5) -> str:
     """按关键词搜索学术论文。数据来自 Semantic Scholar（免费学术搜索引擎）。
@@ -67,15 +69,17 @@ async def search_papers(query: str, limit: int = 5) -> str:
         if data and (data.get("data") or []):
             papers = []
             for p in data["data"]:
-                papers.append({
-                    "paper_id": p.get("paperId"),
-                    "title": p.get("title"),
-                    "authors": [a.get("name") for a in (p.get("authors") or [])],
-                    "year": p.get("year"),
-                    "venue": p.get("venue"),
-                    "citation_count": p.get("citationCount"),
-                    "abstract": (p.get("abstract") or "")[:300],
-                })
+                papers.append(
+                    {
+                        "paper_id": p.get("paperId"),
+                        "title": p.get("title"),
+                        "authors": [a.get("name") for a in (p.get("authors") or [])],
+                        "year": p.get("year"),
+                        "venue": p.get("venue"),
+                        "citation_count": p.get("citationCount"),
+                        "abstract": (p.get("abstract") or "")[:300],
+                    }
+                )
             return json.dumps(
                 {"query": query, "data_source": "semantic_scholar", "papers": papers},
                 ensure_ascii=False,
@@ -95,6 +99,7 @@ async def search_papers(query: str, limit: int = 5) -> str:
 
 
 # ── 2. 论文详情 ─────────────────────────────────────────────────────
+
 
 @tool
 async def get_paper_detail(paper_id: str) -> str:
@@ -147,6 +152,7 @@ async def get_paper_detail(paper_id: str) -> str:
 
 # ── 3. 引用关系图 ───────────────────────────────────────────────────
 
+
 @tool
 async def get_citation_graph(paper_id: str, depth: int = 1) -> str:
     """查询论文的引用关系（被引用 / 引用了谁）。
@@ -160,24 +166,23 @@ async def get_citation_graph(paper_id: str, depth: int = 1) -> str:
     if not mcp_cfg.is_mock():
         fields = "title,authors,year,citationCount"
         # 被谁引用（citations）和引用了谁（references）
-        citations = await _s2_get(
-            f"/paper/{paper_id}/citations", {"fields": fields, "limit": 10}
-        )
-        references = await _s2_get(
-            f"/paper/{paper_id}/references", {"fields": fields, "limit": 10}
-        )
+        citations = await _s2_get(f"/paper/{paper_id}/citations", {"fields": fields, "limit": 10})
+        references = await _s2_get(f"/paper/{paper_id}/references", {"fields": fields, "limit": 10})
 
         if citations or references:
+
             def _fmt(items: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
                 out = []
-                for item in (items or []):
+                for item in items or []:
                     p = item.get("citedPaper") or item.get("citingPaper") or {}
-                    out.append({
-                        "paper_id": p.get("paperId"),
-                        "title": p.get("title"),
-                        "authors": [a.get("name") for a in (p.get("authors") or [])],
-                        "year": p.get("year"),
-                    })
+                    out.append(
+                        {
+                            "paper_id": p.get("paperId"),
+                            "title": p.get("title"),
+                            "authors": [a.get("name") for a in (p.get("authors") or [])],
+                            "year": p.get("year"),
+                        }
+                    )
                 return out
 
             return json.dumps(
@@ -200,10 +205,20 @@ async def get_citation_graph(paper_id: str, depth: int = 1) -> str:
             "data_source": "mock",
             "note": "⚠️ 当前为 mock 数据。",
             "cited_by": [
-                {"paper_id": "mock_cite_001", "title": f"Mock 引用了 {paper_id}", "authors": ["Mock Author"], "year": 2024},
+                {
+                    "paper_id": "mock_cite_001",
+                    "title": f"Mock 引用了 {paper_id}",
+                    "authors": ["Mock Author"],
+                    "year": 2024,
+                },
             ],
             "references": [
-                {"paper_id": "mock_ref_001", "title": "Mock 被引用论文", "authors": ["Mock Author"], "year": 2020},
+                {
+                    "paper_id": "mock_ref_001",
+                    "title": "Mock 被引用论文",
+                    "authors": ["Mock Author"],
+                    "year": 2020,
+                },
             ],
         },
         ensure_ascii=False,

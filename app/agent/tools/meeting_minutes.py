@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # ── 1. 从会议文本抽待办 ────────────────────────────────────────────
 
+
 @tool
 async def extract_action_items(meeting_text: str, format_type: str = "structured") -> str:
     """从会议记录/转写文本中提取 Action Items（待办事项）。
@@ -45,6 +46,7 @@ async def extract_action_items(meeting_text: str, format_type: str = "structured
 
 
 # ── 2. 会议纪要生成 ────────────────────────────────────────────────
+
 
 @tool
 async def summarize_meeting(
@@ -81,6 +83,7 @@ async def summarize_meeting(
 
 
 # ── 3. 分配负责人 ─────────────────────────────────────────────────
+
 
 @tool
 async def assign_owner(

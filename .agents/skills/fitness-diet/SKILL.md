@@ -17,7 +17,9 @@ plan = await generate_workout_plan(goal="减脂", level="中级", days_per_week=
 tdee = await calculate_tdee(height=175, weight=72, age=26, activity="中度活跃")
 
 # 今日饮食记录 + 卡路里汇总
-today = await log_meal(meal="午餐", items=[("米饭", 150, "g"), ("鸡胸肉", 200, "g"), ("西兰花", 100, "g")])
+today = await log_meal(
+    meal="午餐", items=[("米饭", 150, "g"), ("鸡胸肉", 200, "g"), ("西兰花", 100, "g")]
+)
 ```
 
 ## 工具清单

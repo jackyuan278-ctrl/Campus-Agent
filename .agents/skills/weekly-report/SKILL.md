@@ -11,16 +11,11 @@ description: 用户要写周报、做 OKR 复盘、生成汇报材料时触发�
 
 ```python
 # 从 Git 提交 + 日志生成周报
-report = await generate_weekly_report(
-    git_repos=["~/proj/a", "~/proj/b"],
-    days=7,
-    author="tom"
-)
+report = await generate_weekly_report(git_repos=["~/proj/a", "~/proj/b"], days=7, author="tom")
 
 # OKR 复盘草案
 okr_review = await generate_okr_review(
-    objectives=["上线智能客服", "重构 RAG 索引"],
-    period="2026-Q4"
+    objectives=["上线智能客服", "重构 RAG 索引"], period="2026-Q4"
 )
 ```
 

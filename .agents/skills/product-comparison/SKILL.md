@@ -11,7 +11,9 @@ description: 用户要比价、看历史价格、找优惠促销时触发。触�
 
 ```python
 # 多平台比价
-result = await compare_prices(keyword="Kindle Paperwhite 2024", platforms=["京东","天猫","拼多多"])
+result = await compare_prices(
+    keyword="Kindle Paperwhite 2024", platforms=["京东", "天猫", "拼多多"]
+)
 
 # 历史价格曲线
 history = await price_history(product_id="jd_100012043978", days=90)

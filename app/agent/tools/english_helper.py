@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # ── 1. 生词释义 ───────────────────────────────────────────────────
 
+
 @tool
 async def explain_word(word: str, context: str = "", level: str = "CET-4") -> str:
     """解释英语单词含义，附带例句和记忆技巧。
@@ -47,6 +48,7 @@ async def explain_word(word: str, context: str = "", level: str = "CET-4") -> st
 
 # ── 2. 朗读/文本反馈 ──────────────────────────────────────────────
 
+
 @tool
 async def read_along_feedback(user_text: str, expected_text: str = "", aspect: str = "综合") -> str:
     """对用户朗读/写作的文本给学习建议。
@@ -74,6 +76,7 @@ async def read_along_feedback(user_text: str, expected_text: str = "", aspect: s
 
 
 # ── 3. 段落抽生词 ─────────────────────────────────────────────────
+
 
 @tool
 async def extract_vocabulary(paragraph: str, level: str = "CET-6", max_words: int = 15) -> str:

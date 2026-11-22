@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # ── 1. 天气查询（真实：wttr.in；mock：mcp_cfg.MOCK_WEATHER）────────
 
+
 @tool
 async def get_weather(city: str, days: int = 3) -> str:
     """查询城市天气预报。真实数据来自 wttr.in（免费、无需 API key）。
@@ -46,14 +47,18 @@ async def get_weather(city: str, days: int = 3) -> str:
             current = data.get("current_condition", [{}])[0]
             forecasts = []
             for day in (data.get("weather") or [])[:days]:
-                forecasts.append({
-                    "date": day.get("date"),
-                    "max_temp_c": day.get("maxtempC"),
-                    "min_temp_c": day.get("mintempC"),
-                    "sunrise": day.get("astronomy", [{}])[0].get("sunrise"),
-                    "sunset": day.get("astronomy", [{}])[0].get("sunset"),
-                    "desc": (day.get("hourly", [{}])[4].get("weatherDesc") or [{}])[0].get("value"),
-                })
+                forecasts.append(
+                    {
+                        "date": day.get("date"),
+                        "max_temp_c": day.get("maxtempC"),
+                        "min_temp_c": day.get("mintempC"),
+                        "sunrise": day.get("astronomy", [{}])[0].get("sunrise"),
+                        "sunset": day.get("astronomy", [{}])[0].get("sunset"),
+                        "desc": (day.get("hourly", [{}])[4].get("weatherDesc") or [{}])[0].get(
+                            "value"
+                        ),
+                    }
+                )
 
             return json.dumps(
                 {
@@ -100,6 +105,7 @@ async def get_weather(city: str, days: int = 3) -> str:
 
 # ── 2. 航班搜索（暂无真实 API → 纯 mock，来自 mcp_cfg.MOCK_FLIGHTS）────
 
+
 @tool
 async def search_flights(
     from_city: str,
@@ -145,6 +151,7 @@ async def search_flights(
 
 
 # ── 3. 酒店搜索（暂无真实 API → 纯 mock，来自 mcp_cfg.MOCK_HOTELS）────
+
 
 @tool
 async def search_hotels(
@@ -193,6 +200,7 @@ async def search_hotels(
 
 # ── 4. 攻略搜索（真实：复用 web_search；mock：mcp_cfg.MOCK_GUIDES）──────
 
+
 @tool
 async def search_travel_guide(destination: str, style: str = "自由行") -> str:
     """搜索目的地旅游攻略。覆盖景点推荐、美食、交通、避坑指南。
@@ -240,9 +248,17 @@ async def search_travel_guide(destination: str, style: str = "自由行") -> str
             logger.warning("攻略搜索失败 destination=%s: %s，降级 mock", destination, exc)
 
     # mock 兜底
-    guides = mcp_cfg.MOCK_GUIDES.get(destination, [
-        {"title": f"{destination} {style}攻略（mock）", "url": "", "content": "暂无攻略数据", "score": 0},
-    ])
+    guides = mcp_cfg.MOCK_GUIDES.get(
+        destination,
+        [
+            {
+                "title": f"{destination} {style}攻略（mock）",
+                "url": "",
+                "content": "暂无攻略数据",
+                "score": 0,
+            },
+        ],
+    )
     return json.dumps(
         {
             "destination": destination,

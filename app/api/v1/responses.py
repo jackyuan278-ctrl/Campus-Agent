@@ -102,17 +102,21 @@ async def responses(req: ResponsesRequest, http_request: Request):
 
                     # --- 工具调用事件（ToolNode 执行时发出）---
                     if evt == "on_tool_start" and node == "tools":
-                        yield _sse({
-                            "type": "response.function_call",
-                            "name": event.get("name", "unknown"),
-                            "arguments": event.get("data", {}).get("input", {}),
-                        })
+                        yield _sse(
+                            {
+                                "type": "response.function_call",
+                                "name": event.get("name", "unknown"),
+                                "arguments": event.get("data", {}).get("input", {}),
+                            }
+                        )
                     elif evt == "on_tool_end" and node == "tools":
-                        yield _sse({
-                            "type": "response.function_call_output",
-                            "name": event.get("name", "unknown"),
-                            "output": str(event.get("data", {}).get("output", ""))[:2000],
-                        })
+                        yield _sse(
+                            {
+                                "type": "response.function_call_output",
+                                "name": event.get("name", "unknown"),
+                                "output": str(event.get("data", {}).get("output", ""))[:2000],
+                            }
+                        )
                     # --- 模型文本增量（agent 节点）---
                     elif evt == "on_chat_model_stream":
                         if node != "agent":

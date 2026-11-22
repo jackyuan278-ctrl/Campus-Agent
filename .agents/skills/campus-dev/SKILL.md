@@ -50,15 +50,19 @@ summarize（>40 条压到 20）→ image_agent（图片转文字 + 附件块检�
 from app.agent.skills import SkillRegistry
 from langchain_core.tools import tool
 
+
 @tool
 def search_lost(keyword: str) -> str: ...
 
+
 def register(r: SkillRegistry) -> None:
     r.register_tools("market", [search_lost])
-    r.register_tools("chat",   [search_lost])
+    r.register_tools("chat", [search_lost])
+
 
 # 2) graph.py 底部加一行 register 调用（仅此一行，内部不用碰）
 from app.agent.tools import lostfound  # noqa: E402
+
 lostfound.register(registry)
 ```
 

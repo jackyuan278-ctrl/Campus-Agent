@@ -59,6 +59,7 @@ uv run python -m app.rag.ingest --limit 0 --full
 ```python
 import hashlib
 
+
 def fingerprint(text: str) -> str:
     """取 sha1 前 16 位。2^64 空间，5000 条文档撞车概率可忽略。"""
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
@@ -94,7 +95,7 @@ fingerprint 去重   → [doc_A, doc_B, doc_C]       # doc_A_copy 被丢弃
 # app.rag.ingest — activity_doc
 "活动：{title}。地点：{location}。{description[:500]}"
 
-# app.rag.ingest — question_doc  
+# app.rag.ingest — question_doc
 "问答：{title}。{content[:500]}"
 ```
 

@@ -28,6 +28,7 @@ def _with_warning(data: Any) -> str:
 
 # ── 1. 股票实时行情（真实：AKShare；mock：mcp_cfg.MOCK_STOCK_QUOTE）────
 
+
 @tool
 async def get_stock_quote(symbol: str, market: str = "auto") -> str:
     """查询股票实时行情。真实数据来自 AKShare（东方财富）。
@@ -101,6 +102,7 @@ async def get_stock_quote(symbol: str, market: str = "auto") -> str:
 
 # ── 2. 股票财务数据（mock 为主，真实 AKShare 财务接口较重）────────────
 
+
 @tool
 async def get_stock_financials(symbol: str) -> str:
     """查询股票关键财务指标。
@@ -128,6 +130,7 @@ async def get_stock_financials(symbol: str) -> str:
 
 # ── 3. 股票相关新闻（暂无免费开放 API → mock）───────────────────────
 
+
 @tool
 async def get_stock_news(symbol: str, limit: int = 5) -> str:
     """查询与股票相关的近期新闻。
@@ -137,9 +140,12 @@ async def get_stock_news(symbol: str, limit: int = 5) -> str:
         limit: 返回条数，默认 5。
     """
     # 新闻暂无稳定免费开放 API → 直接 mock
-    news = mcp_cfg.MOCK_STOCK_NEWS.get(symbol.upper(), [
-        {"title": f"{symbol.upper()} 暂无公开新闻（mock）", "source": "mock", "date": "N/A"},
-    ])[:limit]
+    news = mcp_cfg.MOCK_STOCK_NEWS.get(
+        symbol.upper(),
+        [
+            {"title": f"{symbol.upper()} 暂无公开新闻（mock）", "source": "mock", "date": "N/A"},
+        ],
+    )[:limit]
 
     result = {
         "symbol": symbol.upper(),

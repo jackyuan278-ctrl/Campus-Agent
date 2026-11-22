@@ -11,8 +11,8 @@ description: 用户要查学术论文、看引用关系、文献调研时触发�
 
 ```python
 papers = await search_papers(query="large language model reasoning", year_from=2023, limit=10)
-refs   = await get_citation_graph(paper_id="arXiv:2305.18290", depth=2)
-cite   = await format_citation(paper_id="...", style="apa")   # apa / ieee / gb7714
+refs = await get_citation_graph(paper_id="arXiv:2305.18290", depth=2)
+cite = await format_citation(paper_id="...", style="apa")  # apa / ieee / gb7714
 ```
 
 ## 工具清单
