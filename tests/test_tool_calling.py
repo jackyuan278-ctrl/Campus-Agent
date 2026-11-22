@@ -136,16 +136,28 @@ def test_model_answers_without_tool(graph):
 def test_tools_are_static_per_mode():
     """工具集只跟档位有关，跟「这句话被认成什么意图」无关。
 
-    旧版按意图裁剪（tools_for_intent），判成 other 就返回空集，
-    模型连工具名都看不到。现在四个查校园库的档位拿到同一份清单。
+    - chat 档：全能力集（校园库 + 股票/文献/比价/代码/面试/英语/周报/健身/会议/本地知识）
+    - market/activity/doc：校园库专用（二手 + 活动）
+    - casual：只有联网搜索
+    - travel：只有旅游相关
+    - None / 未知档位：退回校园库专用集（绝不能是空集）
     """
-    for mode in ("chat", "market", "activity", "doc"):
+    chat_tools = [t.name for t in graph_module.tools_for_mode("chat")]
+    assert "search_secondhand_items_tool" in chat_tools
+    assert "search_campus_activities" in chat_tools
+    assert "get_stock_quote" in chat_tools
+    assert "compare_products" in chat_tools
+    assert "local_knowledge_query" in chat_tools
+
+    for mode in ("market", "activity", "doc"):
         assert [t.name for t in graph_module.tools_for_mode(mode)] == LOCAL_TOOL_NAMES, mode
 
-    # 联网是付费能力，只给显式选了「随便聊聊」的档位
     assert [t.name for t in graph_module.tools_for_mode("casual")] == ["web_search_tool"]
 
-    # 未知 / 缺失档位退回本地工具，绝不能是空集（空集 = 模型没有任何工具可用）
+    travel_tools = [t.name for t in graph_module.tools_for_mode("travel")]
+    assert "get_weather" in travel_tools
+    assert "search_flights" in travel_tools
+
     assert [t.name for t in graph_module.tools_for_mode(None)] == LOCAL_TOOL_NAMES
 
 

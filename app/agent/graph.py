@@ -227,10 +227,14 @@ def tools_for_mode(mode: str | None) -> list[BaseTool]:
        加新功能只需 graph.py 底部多一行 xxx.register(registry)，内部代码不动。
 
     返回前过 tool_router.filter_available() — 熔断中的工具不给模型，降级跳过。
+
+    Fallback 策略：
+    - None / 未知档位 → 校园库专用集（secondhand + activity），不能是空集
+    - 已注册档位 → 直接取该档位的工具
     """
-    # fallback 用 chat 档的工具集，因为它是未知档位的 prompt 兜底（_DEFAULT_MODE_SUFFIX）。
-    # 如果 chat 档也没注册（防御性），给空列表让模型只靠自身知识回答。
-    fallback = registry.get_tools_for_mode("chat", fallback=[])
+    # fallback 用校园库专用工具集（secondhand + activity），保证未知档位拿到的是
+    # 稳定的本地能力，不是 chat 全套
+    fallback = registry.get_tools_for_mode("market", fallback=[])
     raw = registry.get_tools_for_mode(mode, fallback=fallback)
     # 熔断过滤：失败太多的工具暂时不给模型
     return tool_router.filter_available(raw)
@@ -755,9 +759,35 @@ def build_graph(checkpointer=None):
 # ===== Skill 注册 =====
 # 各 tool 模块声明自己服务哪些 mode。graph.py 不再硬编码 mode→tools 映射。
 # 加新功能只需这里多一行 xxx.register(registry)，内部代码不动。
-from app.agent.tools import activity, secondhand, travel, web  # noqa: E402 - 放在末尾避免循环 import
+from app.agent.tools import (  # noqa: E402 - 放在末尾避免循环 import
+    activity,
+    secondhand,
+    stock,
+    literature,
+    product,
+    travel,
+    web,
+    # 纯 LLM 类 skills
+    code_developer,
+    interview,
+    english_helper,
+    weekly_report,
+    fitness,
+    meeting_minutes,
+    local_knowledge,
+)
 
 secondhand.register(registry)
 activity.register(registry)
 web.register(registry)
 travel.register(registry)
+stock.register(registry)
+literature.register(registry)
+product.register(registry)
+code_developer.register(registry)
+interview.register(registry)
+english_helper.register(registry)
+weekly_report.register(registry)
+fitness.register(registry)
+meeting_minutes.register(registry)
+local_knowledge.register(registry)

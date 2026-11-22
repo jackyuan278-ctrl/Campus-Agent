@@ -1,0 +1,44 @@
+# MCP 社区服务配置
+# 约定格式：Codex/Claude Desktop 通用的 servers 列表
+# 每个 server 一个段落，command + args + env
+# 所有 API key 留空，等后续配置
+#
+# 启动方式：Codex/Claude Desktop 自动读取，或用 mcp-cli 手动启动
+# mock 兜底：每个 LangGraph tool 内部自己判断 MOCK_MODE，server 不可用时自动降级 mock
+
+servers:
+  # ── 天气（免费 HTTP wttr.in，不需要额外 MCP server 进程）──
+  # 直接 httpx 调 wttr.in/{city}?format=j1，已在 travel tool 里内置
+  # 这里只声明说明，不需要启动
+
+  # ── 股票行情（AKShare，pip 包，免费，国内直接用）──
+  # 已经 pip install akshare，tool 内部直接 import akshare as ak 调用
+  # 不需要 MCP server 进程，直接 Python import
+  - name: stock
+    command: uv
+    args: ["run", "python", "-c", "import akshare; print('akshare ready')"]
+    env: {}
+
+  # ── 联网搜索（Tavily，项目已在用）──
+  - name: tavily
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-tavily"]
+    env:
+      TAVILY_API_KEY: ""  # ← 留空，在 .env 或系统环境变量里填
+
+  # ── 网页抓取（官方 fetch MCP）──
+  - name: fetch
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-fetch"]
+    env: {}
+
+  # ── 学术论文（Semantic Scholar，免费，可选 key）──
+  - name: semantic-scholar
+    command: uv
+    args: ["run", "pip", "install", "mcp-semantic-scholar"]
+    env:
+      SEMANTIC_SCHOLAR_API_KEY: ""  # ← 可选，不配也能调，限流更严
+
+  # ── 商品比价（暂不接外部 MCP）──
+  # 暂无成熟免费比价 MCP，tool 内部先走 mock
+  # 后续接入：什么值得买开放平台 / 慢慢买 API
