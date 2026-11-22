@@ -48,7 +48,7 @@ from langgraph.prebuilt import ToolNode
 
 from app.agent.postprocess import postprocess as _postprocess
 from app.agent.preprocess import preprocess as _preprocess
-from app.agent.skills import registry
+from app.agent.skills import registry, tool_router
 from app.agent.state import INTENT_CASUAL, AgentState, infer_intent
 from app.common import clock
 from app.common.constants import (
@@ -225,11 +225,15 @@ def tools_for_mode(mode: str | None) -> list[BaseTool]:
 
     ⚠️ 工具集由各 tool 模块的 register() 函数声明，graph.py 不硬编码 mode→tools 映射。
        加新功能只需 graph.py 底部多一行 xxx.register(registry)，内部代码不动。
+
+    返回前过 tool_router.filter_available() — 熔断中的工具不给模型，降级跳过。
     """
     # fallback 用 chat 档的工具集，因为它是未知档位的 prompt 兜底（_DEFAULT_MODE_SUFFIX）。
     # 如果 chat 档也没注册（防御性），给空列表让模型只靠自身知识回答。
     fallback = registry.get_tools_for_mode("chat", fallback=[])
-    return registry.get_tools_for_mode(mode, fallback=fallback)
+    raw = registry.get_tools_for_mode(mode, fallback=fallback)
+    # 熔断过滤：失败太多的工具暂时不给模型
+    return tool_router.filter_available(raw)
 
 
 def prompt_for_mode(mode: str | None) -> str:
@@ -308,19 +312,21 @@ def _model_semaphore() -> asyncio.Semaphore:
 def _handle_tool_error(exc: Exception) -> str:
     """工具执行失败时，把「失败」这件事告诉模型，而不是让整张图崩掉。
 
-    LangGraph 默认的 _default_handle_tool_errors 只处理 ToolInvocationError
-    （参数校验之类），其它异常一律 raise —— 结果是数据库抖一下、embedding 超时，
-    整个请求就 500，而模型本来完全可以说「查询失败了，稍后再试」。
-
-    注意不能直接把原始异常文本回给模型：里面可能带 SQL 片段、连接串。
-    完整异常只进日志。
-
-    话术要给"人话"：这条消息是给模型看的，但模型会转述给用户，
-    所以写「工具调用失败（内部错误）」就等于让用户看到内部错误。
+    同时反馈 ToolRouter.record_failure — 连续 N 次失败后这个工具会被临时熔断，
+    后续轮次 filtered list 里就没有它了，模型不会反复试同一个坏工具。
     """
-    # 这里是 ToolNode 在 except 块之外调用的，exc_info=True 取不到原始堆栈，
-    # 必须显式把异常对象传进去，日志里才有完整 traceback。
-    logger.warning("工具执行失败，已降级为错误消息：%s", exc, exc_info=exc)
+    # 从异常里尽量提取 tool name（ToolInvocationError 有 .tool_invocation 属性）
+    tool_name = "unknown"
+    try:
+        from langchain_core.tools import ToolInvocationError
+
+        if isinstance(exc, ToolInvocationError):
+            tool_name = getattr(getattr(exc, "tool_invocation", None), "tool_name", "unknown")
+    except Exception:
+        pass
+    tool_router.record_failure(tool_name)
+
+    logger.warning("工具[%s]执行失败，已降级为错误消息：%s", tool_name, exc, exc_info=exc)
 
     name = type(exc).__name__.lower()
     reason = (
@@ -587,10 +593,6 @@ def build_graph(checkpointer=None):
         """调模型：要么直接回答，要么返回 tool_calls 要求调工具。"""
         rounds = state.get("tool_rounds", 0)
         tools = tools_for_mode(state.get("mode"))
-        # 这里不用判断轮数：should_use_tools 只在 rounds < MAX_TOOL_ROUNDS 时
-        # 才把流程送进 agent，走到这里一定还有轮次可用（以前那句
-        # `rounds < MAX_TOOL_ROUNDS` 是永远成立的条件，留着会让人误以为
-        # agent 自己负责截断）。
         runnable = model.bind_tools(tools) if tools else model
 
         history = state.get("messages") or []
@@ -598,6 +600,30 @@ def build_graph(checkpointer=None):
         # 只看最后一条：更早的已经在上一轮扫过了，重复扫是浪费。
         if history and isinstance(history[-1], ToolMessage):
             _scan_untrusted(str(history[-1].content), "工具结果", state.get("thread_id"))
+
+        # --- 收集上一轮 ToolNode 执行后的 ToolMessage 到 tool_events ---
+        prev_events = list(state.get("tool_events") or [])
+        if history and isinstance(history[-1], ToolMessage):
+            tool_msg: ToolMessage = history[-1]  # type: ignore[assignment]
+            # 找对应的 tool_call name（从 ToolMessage.tool_call_id 倒推）
+            tool_call_id = getattr(tool_msg, "tool_call_id", None)
+            tool_name = "unknown"
+            for i in range(len(history) - 2, -1, -1):
+                prev = history[i]
+                prev_calls = getattr(prev, "tool_calls", None) or []
+                for pc in prev_calls:
+                    if pc.get("id") == tool_call_id:
+                        tool_name = pc.get("name", "unknown")
+                        break
+                if tool_name != "unknown":
+                    break
+            # 反馈 ToolRouter：成功
+            tool_router.record_success(tool_name)
+            prev_events.append({
+                "type": "function_call_output",
+                "name": tool_name,
+                "output": str(tool_msg.content)[:2000],  # 截断防爆
+            })
 
         # 三段 SystemMessage：固定前缀（永远第一 → 缓存命中）+ 档位人设（随 mode 变）
         # + 当前时间（每轮变）。历史和附件在后面，保证前缀稳定。
@@ -617,11 +643,19 @@ def build_graph(checkpointer=None):
                 len(calls),
                 [c.get("name") for c in calls],
             )
+            # 记录这次 tool_call 到 tool_events
+            for call in calls:
+                prev_events.append({
+                    "type": "function_call",
+                    "name": call.get("name", "unknown"),
+                    "arguments": call.get("args") or {},
+                })
         return {
             "messages": [resp],
             "answer": resp.content or "",
             "tool_rounds": rounds + 1,
             "turn_tokens": state.get("turn_tokens", 0) + _tokens_of(resp, messages),
+            "tool_events": prev_events,
         }
 
     async def strip_calls(state: AgentState) -> dict[str, Any]:

@@ -64,6 +64,7 @@ class AgentState(TypedDict, total=False):
     attachment_text: str  # 图片经视觉模型转成的文字（拼进本轮提问）
     vision_tokens: int  # 识图花掉的 token（并入本轮配额）
     answer: str  # 本轮最终回复
+    tool_events: list[dict] | None  # 每轮 tool_call + ToolMessage 结果（供 Responses API SSE 透传）
 
 
 def infer_intent(query: str) -> str:

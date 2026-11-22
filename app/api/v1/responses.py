@@ -97,20 +97,35 @@ async def responses(req: ResponsesRequest, http_request: Request):
         async with thread_lock(thread_id):
             try:
                 async for event in graph.astream_events(inputs, config, version="v2"):
-                    if event["event"] != "on_chat_model_stream":
-                        continue
-                    # 只转发 agent 节点的模型输出（和 /assistant/chat 同样的过滤）
-                    if (event.get("metadata") or {}).get("langgraph_node") != "agent":
-                        continue
-                    text = getattr(event["data"].get("chunk"), "content", "") or ""
-                    if text:
-                        yield _sse(
-                            {
-                                "type": "response.output_text.delta",
-                                "delta": text,
-                                "item_id": item_id,
-                            }
-                        )
+                    evt = event.get("event")
+                    node = (event.get("metadata") or {}).get("langgraph_node")
+
+                    # --- 工具调用事件（ToolNode 执行时发出）---
+                    if evt == "on_tool_start" and node == "tools":
+                        yield _sse({
+                            "type": "response.function_call",
+                            "name": event.get("name", "unknown"),
+                            "arguments": event.get("data", {}).get("input", {}),
+                        })
+                    elif evt == "on_tool_end" and node == "tools":
+                        yield _sse({
+                            "type": "response.function_call_output",
+                            "name": event.get("name", "unknown"),
+                            "output": str(event.get("data", {}).get("output", ""))[:2000],
+                        })
+                    # --- 模型文本增量（agent 节点）---
+                    elif evt == "on_chat_model_stream":
+                        if node != "agent":
+                            continue
+                        text = getattr(event["data"].get("chunk"), "content", "") or ""
+                        if text:
+                            yield _sse(
+                                {
+                                    "type": "response.output_text.delta",
+                                    "delta": text,
+                                    "item_id": item_id,
+                                }
+                            )
             except AppError as exc:
                 logger.warning("responses 流式失败（业务异常 %s）：%s", exc.code, exc.message)
                 yield _sse(

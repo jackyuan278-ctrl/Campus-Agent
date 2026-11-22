@@ -18,9 +18,80 @@
     → graph.py 内部工具分配代码一行不动
 """
 
+import logging
+import time
 from typing import Any
 
 from langchain_core.tools import BaseTool
+
+logger = logging.getLogger(__name__)
+
+
+class ToolRouter:
+    """工具级熔断：某个工具连续失败 N 次后临时跳过。
+
+    最简内存实现（单进程够用），按 tool_name 维度独立计数。
+    - failure_threshold: 连续失败多少次后熔断（默认 3）
+    - cooldown_seconds: 熔断冷却秒数（默认 60，到期后自动半开）
+    - 成功会降计数（半开恢复），不会等到冷却完才恢复
+    - 熔断中的工具不会在 filtered list 里出现，模型自然跳过
+    """
+
+    def __init__(self, failure_threshold: int = 3, cooldown_seconds: int = 60) -> None:
+        self.failure_counts: dict[str, int] = {}
+        self.circuit_open_since: dict[str, float] = {}  # tool_name → 熔断开始时间戳
+        self.failure_threshold = failure_threshold
+        self.cooldown_seconds = cooldown_seconds
+
+    def is_available(self, tool_name: str) -> bool:
+        """查这个工具现在能不能给模型用。熔断中的跳过。"""
+        count = self.failure_counts.get(tool_name, 0)
+        if count < self.failure_threshold:
+            return True
+        # 已熔断，但看看冷却到了没
+        opened_at = self.circuit_open_since.get(tool_name)
+        if opened_at is not None and (time.time() - opened_at) >= self.cooldown_seconds:
+            # 冷却到期，半开：清零，允许试一次
+            logger.warning("工具 %s 冷却到期，半开尝试", tool_name)
+            self.failure_counts[tool_name] = 0
+            self.circuit_open_since.pop(tool_name, None)
+            return True
+        return False
+
+    def record_failure(self, tool_name: str) -> None:
+        """记录一次失败。达到阈值时触发熔断。"""
+        count = self.failure_counts.get(tool_name, 0) + 1
+        self.failure_counts[tool_name] = count
+        if count >= self.failure_threshold and tool_name not in self.circuit_open_since:
+            logger.warning(
+                "工具 %s 连续失败 %d 次，进入熔断（冷却 %ds）",
+                tool_name,
+                count,
+                self.cooldown_seconds,
+            )
+            self.circuit_open_since[tool_name] = time.time()
+
+    def record_success(self, tool_name: str) -> None:
+        """成功会逐步降计数（半开恢复）。不会完全清零计数，只往 0 靠。"""
+        if tool_name in self.failure_counts:
+            self.failure_counts[tool_name] = max(0, self.failure_counts[tool_name] - 1)
+
+    def filter_available(self, tools: list[BaseTool]) -> list[BaseTool]:
+        """过滤掉熔断中的工具，返回可用清单。"""
+        available = [t for t in tools if self.is_available(t.name)]
+        removed = [t.name for t in tools if not self.is_available(t.name)]
+        if removed:
+            logger.warning("以下工具因熔断被跳过：%s", removed)
+        return available
+
+    def reset(self, tool_name: str | None = None) -> None:
+        """手动重置熔断状态（测试用或运维用）。不传名则全部重置。"""
+        if tool_name is None:
+            self.failure_counts.clear()
+            self.circuit_open_since.clear()
+        else:
+            self.failure_counts.pop(tool_name, None)
+            self.circuit_open_since.pop(tool_name, None)
 
 
 class SkillRegistry:
@@ -78,3 +149,5 @@ class SkillRegistry:
 
 # 全局单例（graph.py 底部统一填充）
 registry = SkillRegistry()
+# 全局熔断路由器（单进程内存）
+tool_router = ToolRouter()
