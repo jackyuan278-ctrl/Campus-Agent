@@ -7,8 +7,8 @@
 
 两个约束写在这里，避免下次重构时踩回去：
 
-1. `max_tokens` 至少 1500。glm-5.3-flash 是「始终思考」的模型，给它 20 个 token
-   做预算，正文会被推理吃光，返回空串（实测过）。
+1. `max_tokens` 至少 1500。spark-x2.6 是思考模型，给它 20 个 token 做预算，
+   正文会被推理吃光，返回空串（实测过 glm-5.3-flash 如此，星火同理）。
 2. `stream_usage=True`。OpenAI 协议默认只在非流式响应里带 usage，
    不开这个的话 SSE 路径拿不到真实 token 数，配额只能靠估算。
 """
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_chat_model(*, temperature: float = 0.3, max_tokens: int = 1500) -> ChatOpenAI:
-    """构造 LangChain 的 ChatOpenAI（指向 GLM 的 OpenAI 兼容接口）。
+    """构造 LangChain 的 ChatOpenAI（指向讯飞星火的 OpenAI 兼容接口）。
 
     返回的是 Runnable：支持 ainvoke / astream / 事件回调 / bind_tools，
     给 LangGraph 节点和 SSE 流式输出用。
@@ -34,14 +34,10 @@ def get_chat_model(*, temperature: float = 0.3, max_tokens: int = 1500) -> ChatO
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,
         temperature=temperature,
-        max_tokens=max_tokens,  # 推理模型要留足预算，否则内容被思考吃光
+        max_tokens=max_tokens,
         timeout=30,
         max_retries=2,
         # 让流式响应也带 usage（OpenAI 协议默认只在非流式返回）。
         # 不开启的话，SSE 路径拿不到真实 token 数，配额只能靠估算。
         stream_usage=True,
-        # glm-5.3-flash 是「始终思考」的模型，关不掉，但能调档位。
-        # 我们是简单问答，用 low 换更快的首字和更低的 token 消耗。
-        # 注意参数形状：thinking 必须是对象，type 只认 enabled/disabled，档位放 level。
-        extra_body={"thinking": {"type": "enabled", "level": "low"}},
     )
