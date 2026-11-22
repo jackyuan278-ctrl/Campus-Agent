@@ -237,11 +237,14 @@ def tools_for_mode(mode: str | None) -> list[BaseTool]:
 
 
 def prompt_for_mode(mode: str | None) -> str:
-    """档位 → 随 mode 变的 suffix。未知档位退回 chat 档 suffix，不报错也不拦。
+    """档位 → 随 mode 变的 suffix。
 
-    公共角色前缀、安全约束已移到 _PROMPT_FIXED_PREFIX —— 那是跨轮稳定的，
-    智谱 GLM 的隐式上下文缓存依赖这个前缀稳定来命中。
+    优先级：registry 里注册的 prompt（工具包自己的人设）→ graph.py 硬编码的 _MODE_SUFFIXES → chat 档兜底。
+    这样工具包可以自带人设，graph.py 不需要为每个新档位写 prompt。
     """
+    registry_prompt = registry.get_prompt(mode)
+    if registry_prompt is not None:
+        return registry_prompt
     return _MODE_SUFFIXES.get(mode or "", _DEFAULT_MODE_SUFFIX)
 
 
@@ -752,8 +755,9 @@ def build_graph(checkpointer=None):
 # ===== Skill 注册 =====
 # 各 tool 模块声明自己服务哪些 mode。graph.py 不再硬编码 mode→tools 映射。
 # 加新功能只需这里多一行 xxx.register(registry)，内部代码不动。
-from app.agent.tools import activity, secondhand, web  # noqa: E402 - 放在末尾避免循环 import
+from app.agent.tools import activity, secondhand, travel, web  # noqa: E402 - 放在末尾避免循环 import
 
 secondhand.register(registry)
 activity.register(registry)
 web.register(registry)
+travel.register(registry)

@@ -106,6 +106,8 @@ class SkillRegistry:
         self._mode_tools: dict[str, list[BaseTool]] = {}
         # tool_name → tool  去重用
         self._all_tools: dict[str, BaseTool] = {}
+        # mode → prompt suffix  档位人设（可选，不注册时 graph.py 用兜底 prompt）
+        self._mode_prompts: dict[str, str] = {}
 
     def register_tools(self, mode: str, tools: list[BaseTool]) -> None:
         """给某个 mode 追加一组工具。
@@ -117,6 +119,16 @@ class SkillRegistry:
             if tool not in bucket:
                 bucket.append(tool)
             self._all_tools[tool.name] = tool
+
+    def register_prompt(self, mode: str, prompt: str) -> None:
+        """给某个 mode 注册人设 prompt suffix（工具包自己的档位人设放在这里注册）。"""
+        self._mode_prompts[mode] = prompt
+
+    def get_prompt(self, mode: str | None) -> str | None:
+        """取某个 mode 的 prompt suffix。未注册返回 None（graph.py 会 fallback）。"""
+        if not mode:
+            return None
+        return self._mode_prompts.get(mode)
 
     def get_tools_for_mode(
         self, mode: str | None, fallback: list[BaseTool] | None = None
