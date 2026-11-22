@@ -183,6 +183,7 @@ uvx ruff check app tests           # 干净
 ```python
 _LOCAL_TOOLS = SECONDHAND_TOOLS + CAMPUS_SEARCH_TOOLS
 
+
 def tools_for_mode(mode):
     return _ALL_TOOLS if mode == "casual" else _LOCAL_TOOLS
 ```
